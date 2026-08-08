@@ -186,12 +186,23 @@ describe('cierre del estudio', () => {
         assert.equal(estado(r, '06:30 PM'), 'closing');
     });
 
-    test('el turno noche de las 19:00 admite hasta 3 horas', () => {
-        assert.equal(estado(disponibilidad({ durationMinutes: 180 }), '07:00 PM'), 'libre');
+    // Antes existía una excepción para el turno de las 19:00, que podía
+    // estirarse hasta las 22:00 mientras el de las 18:30 se bloqueaba a las
+    // 20:00. Esa incoherencia era justo lo que la clienta veía como "18:30
+    // fuera de horario" sin motivo. Ahora el cierre es uno solo y vale para
+    // todos los turnos.
+    test('el cierre vale igual para todos los turnos', () => {
+        const r = disponibilidad({ durationMinutes: 180 });
+        assert.equal(estado(r, '06:30 PM'), 'closing');  // 18:30 -> 21:30
+        assert.equal(estado(r, '07:00 PM'), 'closing');  // 19:00 -> 22:00
     });
 
-    test('pero no más de 3 horas', () => {
-        assert.equal(estado(disponibilidad({ durationMinutes: 240 }), '07:00 PM'), 'closing');
+    test('con la jornada ampliada, ese mismo turno sí cabe', () => {
+        const r = disponibilidad({
+            durationMinutes: 180,
+            businessHours: { openingTime: '08:00', closingTime: '22:00' }
+        });
+        assert.equal(estado(r, '07:00 PM'), 'libre');
     });
 
     test('las 18:00 admiten dos horas justas', () => {
@@ -260,5 +271,160 @@ describe('mergeAppointmentSources', () => {
     test('tolera entradas ausentes', () => {
         assert.deepEqual(mergeAppointmentSources(), []);
         assert.deepEqual(mergeAppointmentSources(null, null), []);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Regresión del hotfix de QA (2026-08-08).
+//
+// Estos casos reproducen defectos vistos en la interfaz real. Llaman a
+// `computeAvailability`, que es exactamente la función que usa
+// `renderTimeSlots()`: no se duplica aquí ninguna regla de negocio.
+// ─────────────────────────────────────────────────────────────
+
+describe('jornada configurable', () => {
+    test('sin duración de servicio NO se inventan bloqueos', () => {
+        // El bug: la UI pasaba 120 minutos por defecto y turnos perfectamente
+        // reservables salían como "Fuera de horario" antes de elegir nada.
+        const r = disponibilidad({ durationMinutes: 0 });
+        assert.equal(estado(r, '06:30 PM'), 'libre');
+        assert.equal(estado(r, '07:00 PM'), 'libre');
+    });
+
+    test('servicio de 60 min con cierre a las 19:30', () => {
+        const r = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '08:00', closingTime: '19:30' }
+        });
+        assert.equal(estado(r, '12:00 PM'), 'libre');
+        assert.equal(estado(r, '06:00 PM'), 'libre');
+        assert.equal(estado(r, '06:30 PM'), 'libre');   // 18:30 -> 19:30, cabe justo
+        assert.equal(estado(r, '07:00 PM'), 'closing'); // 19:00 -> 20:00, no cabe
+    });
+
+    test('el mismo servicio con cierre a las 19:00', () => {
+        const r = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '08:00', closingTime: '19:00' }
+        });
+        assert.equal(estado(r, '06:00 PM'), 'libre');    // 18:00 -> 19:00
+        assert.equal(estado(r, '06:30 PM'), 'closing');  // 18:30 -> 19:30
+    });
+
+    test('servicio de 120 min respeta el cierre', () => {
+        const r = disponibilidad({
+            durationMinutes: 120,
+            businessHours: { openingTime: '08:00', closingTime: '19:00' }
+        });
+        assert.equal(estado(r, '05:00 PM'), 'libre');    // 17:00 -> 19:00
+        assert.equal(estado(r, '05:30 PM'), 'closing');  // 17:30 -> 19:30
+    });
+
+    test('un turno anterior a la apertura queda fuera de horario, no "sin espacio"', () => {
+        const r = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '10:00', closingTime: '19:00' }
+        });
+        assert.equal(estado(r, '08:00 AM'), 'outside-hours');
+        assert.equal(estado(r, '09:30 AM'), 'outside-hours');
+        assert.equal(estado(r, '10:00 AM'), 'libre');
+    });
+
+    test('una jornada invertida no deja el día muerto', () => {
+        const r = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '20:00', closingTime: '08:00' }
+        });
+        assert.equal(estado(r, '12:00 PM'), 'libre');
+    });
+});
+
+describe('independencia entre turnos', () => {
+    // El cálculo no recibe la hora seleccionada por la clienta, así que elegir
+    // una no puede cambiar el estado de otra. Se fija para que no vuelva a
+    // colarse una dependencia.
+    test('el resultado no cambia al repetir la llamada', () => {
+        const primera = disponibilidad({ durationMinutes: 60 });
+        const segunda = disponibilidad({ durationMinutes: 60 });
+        assert.deepEqual(primera.slots, segunda.slots);
+    });
+
+    test('elegir las 12:00 no afecta a las 11:30 ni a las 12:30', () => {
+        const r = disponibilidad({ durationMinutes: 60 });
+        assert.equal(estado(r, '11:30 AM'), 'libre');
+        assert.equal(estado(r, '12:00 PM'), 'libre');
+        assert.equal(estado(r, '12:30 PM'), 'libre');
+    });
+
+    test('elegir las 12:30 no afecta a las 18:30', () => {
+        const r = disponibilidad({ durationMinutes: 60 });
+        assert.equal(estado(r, '06:30 PM'), 'libre');
+    });
+
+    test('un turno futuro no es "pasado" por ser anterior a otro', () => {
+        // Solo el reloj marca el pasado, y solo si la fecha pedida es hoy.
+        const r = disponibilidad({
+            durationMinutes: 60,
+            todayIso: DIA,
+            now: new Date(2026, 8, 1, 10, 0)
+        });
+        assert.equal(estado(r, '09:30 AM'), 'past');
+        assert.equal(estado(r, '10:00 AM'), 'past');
+        assert.equal(estado(r, '11:30 AM'), 'libre');
+        assert.equal(estado(r, '12:00 PM'), 'libre');
+    });
+});
+
+describe('solapamiento real con una cita existente', () => {
+    const citaDe14a16 = [{
+        id: 'app_1',
+        time: '02:00 PM',
+        dateKey: 'Tue Sep 01 2026',
+        appointmentDateIso: DIA,
+        durationMinutes: 120,
+        status: 'confirmada'
+    }];
+
+    test('una cita de 14:00 a 16:00 no toca las 16:00 ni las 18:30', () => {
+        const r = disponibilidad({ durationMinutes: 60, cloudAppointments: citaDe14a16 });
+        assert.equal(estado(r, '04:00 PM'), 'libre');
+        assert.equal(estado(r, '06:30 PM'), 'libre');
+    });
+
+    test('con un servicio de 30 min, las 13:30 siguen libres', () => {
+        // 13:30 + 30 = 14:00, que es justo cuando empieza la otra cita.
+        const r = disponibilidad({ durationMinutes: 30, cloudAppointments: citaDe14a16 });
+        assert.equal(estado(r, '01:30 PM'), 'libre');
+        assert.equal(estado(r, '02:00 PM'), 'booked');
+    });
+
+    test('con un servicio de 60 min, las 13:30 sí solapan', () => {
+        // 13:30 + 60 = 14:30, que invade la cita. No es proximidad: es solape.
+        const r = disponibilidad({ durationMinutes: 60, cloudAppointments: citaDe14a16 });
+        assert.equal(estado(r, '01:30 PM'), 'no-space');
+        assert.equal(estado(r, '01:00 PM'), 'libre');
+    });
+});
+
+describe('formato de hora', () => {
+    test('12h y 24h describen el mismo instante en la jornada', () => {
+        const doceHoras = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '08:00 AM', closingTime: '07:00 PM' }
+        });
+        const veinticuatro = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '08:00', closingTime: '19:00' }
+        });
+        assert.deepEqual(doceHoras.slots, veinticuatro.slots);
+    });
+
+    test('06:30 PM es 18:30 y no 06:30', () => {
+        const r = disponibilidad({
+            durationMinutes: 60,
+            businessHours: { openingTime: '06:30 PM', closingTime: '08:00 PM' }
+        });
+        assert.equal(estado(r, '08:00 AM'), 'outside-hours');
+        assert.equal(estado(r, '06:30 PM'), 'libre');
     });
 });

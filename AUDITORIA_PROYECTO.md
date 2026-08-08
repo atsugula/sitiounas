@@ -1,4 +1,4 @@
-# Auditoria del proyecto `sitiounas`
+# Auditoria del proyecto `sitioauditoria`
 
 ## Resumen ejecutivo
 - El proyecto es una **landing/app de una sola pagina** hecha en **HTML estatico + JavaScript vanilla embebido**, con **Tailwind por CDN** y bastante logica de negocio dentro de `index.html`.
@@ -16,7 +16,7 @@
 
 ### Arbol relevante
 ```text
-D:\trabajo\cloneWebSites\sitiounas
+D:\trabajo\sitioauditoria
 ├─ index.html
 └─ logo.jpg
 ```

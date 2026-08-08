@@ -17,7 +17,11 @@ import { join, extname, normalize } from 'node:path';
 import process from 'node:process';
 
 const port = Number(process.argv[2]) || 5173;
-const root = process.cwd();
+const rootArgIndex = process.argv.indexOf('--root');
+const repoRoot = process.cwd();
+const root = rootArgIndex >= 0 && process.argv[rootArgIndex + 1]
+    ? join(repoRoot, process.argv[rootArgIndex + 1])
+    : repoRoot;
 
 const MIME = {
     '.html': 'text/html; charset=utf-8',
@@ -35,7 +39,7 @@ const MIME = {
 /** Cabeceras de seguridad declaradas en firebase.json, para no duplicarlas. */
 function loadSecurityHeaders() {
     try {
-        const config = JSON.parse(readFileSync(join(root, 'firebase.json'), 'utf8'));
+        const config = JSON.parse(readFileSync(join(repoRoot, 'firebase.json'), 'utf8'));
         const rule = config?.hosting?.headers?.find((entry) => entry.source === '**');
         if (!rule?.headers) return {};
         return Object.fromEntries(rule.headers.map((header) => [header.key, header.value]));

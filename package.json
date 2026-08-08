@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
+    "serve:hosting": "node tools/serve.mjs --root public",
+    "prepare:hosting": "node tools/prepare-hosting.mjs",
     "check": "node tools/check-inline-scripts.mjs index.html",
     "test": "node --test tests/booking-slots.test.mjs tests/loyalty.test.mjs tests/sanitize.test.mjs tests/time.test.mjs tests/availability.test.mjs tests/migrate-plan.test.mjs tests/appointment-payload.test.mjs",
     "test:sanitize": "node --test tests/sanitize.test.mjs",
