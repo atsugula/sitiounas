@@ -3272,7 +3272,7 @@
 
             window.dbInstance = db;
             window.authInstance = auth;
-            window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged };
+            window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously };
             // `serverTimestamp` faltaba aquí: el script clásico lo invocaba
             // como global y lanzaba ReferenceError, lo que rompía el registro
             // de clientas. Todo lo que use el script clásico debe exponerse
@@ -4272,17 +4272,10 @@
                 cacheLocally('ncv_appointments', apps);
             }
 
-            let alerts = JSON.parse(localStorage.getItem('ncv_cancellation_alerts') || '[]');
-            alerts.unshift({
-                id: 'alert_' + Date.now(),
-                appId: appId,
-                dateKey: dateKeyStr,
-                time: timeStr,
-                refundEligible: isRefundEligible,
-                hoursNotice: Math.round(hoursDifference),
-                createdAt: new Date().toISOString()
-            });
-            localStorage.setItem('ncv_cancellation_alerts', JSON.stringify(alerts));
+            // `ncv_cancellation_alerts` se escribía aquí pero no lo leía nadie:
+            // `renderAdminCancellationAlerts()` deriva las alertas de las citas
+            // con `status === 'cancelada'`. Era una copia paralela, en el
+            // navegador de la clienta, de datos que el admin nunca iba a ver.
 
             searchClientAppointmentsForCancellation();
             if (typeof window.renderCalendar === 'function') window.renderCalendar();
@@ -4309,8 +4302,11 @@
             const tbodyEl = document.getElementById('admin-birthdays-tbody');
             if (!container && !tbodyEl) return;
 
-            const allApps = window.allAppointmentsList || JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
-            const allUsers = window.allUsersList || JSON.parse(localStorage.getItem('ncv_users') || '[]');
+            // La lista de clientas viene de la suscripción admin a Firestore.
+            // El respaldo a `ncv_users` se retira: era una copia local, vieja y
+            // manipulable, de datos personales.
+            const allApps = window.allAppointmentsList || readCache('ncv_appointments', []);
+            const allUsers = window.allUsersList || [];
 
             const selectedMonthEl = document.getElementById('admin-birthday-month');
             const widgetMonthStr = String(new Date().getMonth() + 1).padStart(2, '0');
@@ -4489,6 +4485,13 @@
             window.isAdminAuthenticated = false;
             window.currentAdminProfile = null;
 
+            // Cerrar explícitamente los listeners con PII. `onAuthStateChanged`
+            // también lo hace, pero no conviene que la única garantía de que
+            // deja de fluir la base de clientas sea un callback asíncrono.
+            if (typeof window.unsubscribeAdminUsers === 'function') window.unsubscribeAdminUsers();
+            if (typeof window.unsubscribeIncomeGoal === 'function') window.unsubscribeIncomeGoal();
+            if (typeof window.unsubscribeAppointments === 'function') window.unsubscribeAppointments();
+
             const adminPanel = document.getElementById('admin-panel-modal');
             if (adminPanel) adminPanel.classList.add('hidden');
             const adminAuth = document.getElementById('admin-auth-modal');
@@ -4499,6 +4502,12 @@
                 const isAdmin = await checkFirebaseAdminRole(currentUser);
                 if (isAdmin) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                    // Sin sesión no hay disponibilidad: la web pública vive
+                    // sobre una sesión anónima. Al cerrar la de admin hay que
+                    // devolverle una, o el sitio queda mudo hasta recargar.
+                    if (window.firebaseAuthUtils.signInAnonymously) {
+                        await window.firebaseAuthUtils.signInAnonymously(window.authInstance).catch(() => { });
+                    }
                 }
             }
 
@@ -5750,18 +5759,6 @@
                     app.refundEligible = isEligible;
                     app.isRefunded = isEligible;
                     app.cancellationNoticeHours = Math.round(hoursNotice);
-
-                    const alerts = readCache('ncv_cancellation_alerts', []);
-                    alerts.unshift({
-                        id: 'alert_' + Date.now(),
-                        appId: appId,
-                        dateKey: dateStr,
-                        time: app.time,
-                        refundEligible: isEligible,
-                        hoursNotice: Math.round(hoursNotice),
-                        createdAt: new Date().toISOString()
-                    });
-                    cacheLocally('ncv_cancellation_alerts', alerts);
                 } else {
                     await saveAppointmentAdminFields(appId, { status: newStatus });
                     app.status = newStatus;
@@ -5789,22 +5786,30 @@
             await setDoc(doc(window.dbInstance, 'appointments', appointmentId), fields, { merge: true });
         }
 
-        window.toggleAbonoRefund = function (appId) {
-            let apps = window.allAppointmentsList || JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
+        // Marcar un abono como devuelto es una decisión de dinero, así que va
+        // a la nube primero: si Firestore rechaza (por ejemplo, porque la
+        // sesión ya no es admin), la UI no debe mentir diciendo que se hizo.
+        window.toggleAbonoRefund = async function (appId) {
+            const apps = window.allAppointmentsList || readCache('ncv_appointments', []);
             const idx = apps.findIndex(a => a.id === appId);
-            if (idx >= 0) {
-                apps[idx].isRefunded = !apps[idx].isRefunded;
-                localStorage.setItem('ncv_appointments', JSON.stringify(apps));
-                if (window.dbInstance && window.firestoreUtils && appId) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'appointments', appId), { isRefunded: apps[idx].isRefunded }, { merge: true });
-                    } catch (e) { }
-                }
-                showToast(apps[idx].isRefunded ? '💸 Cita marcada con abono de $10.000 COP devuelto.' : '💰 Cita marcada con abono de $10.000 COP retenido.');
-                renderAdminBookingsTable();
-                renderAdminCharts();
+            if (idx < 0 || !appId) return;
+
+            const nextValue = !apps[idx].isRefunded;
+
+            try {
+                await saveAppointmentAdminFields(appId, { isRefunded: nextValue });
+            } catch (error) {
+                console.error('Error actualizando el abono:', error);
+                showToast('No pudimos actualizar el estado del abono. Intenta de nuevo.', 'error');
+                return;
             }
+
+            apps[idx].isRefunded = nextValue;
+            cacheLocally('ncv_appointments', apps);
+
+            showToast(nextValue ? '💸 Cita marcada con abono de $10.000 COP devuelto.' : '💰 Cita marcada con abono de $10.000 COP retenido.');
+            renderAdminBookingsTable();
+            renderAdminCharts();
         };
 
         window.exportFinancialReportCSV = function () {
