@@ -1324,7 +1324,7 @@
                     <div id="faq-ans-2"
                         class="hidden px-5 sm:px-6 pb-6 text-sm sm:text-base text-gray-600 leading-relaxed border-t border-brand-100/60 pt-4">
                         Al seleccionar tu fecha y hora en el sitio web, transfieres $10.000 COP a la llave <strong
-                            class="text-brand-950 font-mono">0090984300</strong> desde la app de tu banco (Bre-B /
+                            id="llave-faq-number" class="text-brand-950 font-mono">0090984300</strong> desde la app de tu banco (Bre-B /
                         Bancolombia / Nequi). Luego presionas "Agendar por WhatsApp" y envías la captura del
                         comprobante. El monto abonado se descuenta del total de tu servicio el día de la cita.
                     </div>
@@ -3268,7 +3268,11 @@
             window.dbInstance = db;
             window.authInstance = auth;
             window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged };
-            window.firestoreUtils = { doc, setDoc, addDoc, getDoc, collection, query, where, getDocs, deleteDoc };
+            // `serverTimestamp` faltaba aquí: el script clásico lo invocaba
+            // como global y lanzaba ReferenceError, lo que rompía el registro
+            // de clientas. Todo lo que use el script clásico debe exponerse
+            // explícitamente, porque son ámbitos distintos.
+            window.firestoreUtils = { doc, setDoc, addDoc, getDoc, collection, query, where, getDocs, deleteDoc, serverTimestamp };
 
             window.currentFirebaseUser = null;
             window.currentAdminProfile = null;
@@ -3300,6 +3304,8 @@
                 window.isAdminAuthenticated = false;
                 window.currentAdminProfile = null;
                 window.currentFirebaseUser = window.authInstance ? window.authInstance.currentUser : null;
+                if (typeof window.unsubscribeAdminUsers === 'function') window.unsubscribeAdminUsers();
+                if (typeof window.unsubscribeIncomeGoal === 'function') window.unsubscribeIncomeGoal();
             }
 
             onAuthStateChanged(auth, async (user) => {
@@ -3313,6 +3319,11 @@
                 const isAdmin = await checkFirebaseAdminRole(user);
                 if (!isAdmin) {
                     clearAdminSessionMemory();
+                    // Cuenta de clienta: su sesión se rehidrata desde
+                    // Firestore, no desde lo que haya en localStorage.
+                    if (typeof window.hydrateClientSession === 'function') {
+                        window.hydrateClientSession(user);
+                    }
                     const adminPanel = document.getElementById('admin-panel-modal');
                     if (adminPanel && !adminPanel.classList.contains('hidden')) {
                         adminPanel.classList.add('hidden');
@@ -3326,6 +3337,8 @@
 
                 window.isAdminAuthenticated = true;
                 window.currentAdminProfile = { uid: user.uid, email: user.email || '', role: 'admin' };
+                if (typeof window.subscribeAdminUsers === 'function') window.subscribeAdminUsers();
+                if (typeof window.subscribeIncomeGoal === 'function') window.subscribeIncomeGoal();
 
                 if (window.location.hash === '#admin' || window.location.pathname.endsWith('/admin')) {
                     const authModal = document.getElementById('admin-auth-modal');
@@ -3382,24 +3395,43 @@
                 console.warn("Firestore sync fallback a LocalStorage.");
             });
 
-            const usersRef = collection(db, 'users');
-            onSnapshot(usersRef, (snapshot) => {
-                const allUsers = [];
-                snapshot.forEach((docSnap) => {
-                    allUsers.push({ uid: docSnap.id, id: docSnap.id, ...docSnap.data() });
+            // La coleccion `users` contiene PII y solo es listable por admin.
+            // Por eso la suscripcion se abre unicamente cuando hay una sesion
+            // administrativa confirmada, y se cierra al perderla.
+            let unsubscribeAdminUsers = null;
+
+            window.subscribeAdminUsers = function () {
+                if (unsubscribeAdminUsers) return;
+                unsubscribeAdminUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+                    const allUsers = [];
+                    snapshot.forEach((docSnap) => {
+                        allUsers.push({ uid: docSnap.id, id: docSnap.id, ...docSnap.data() });
+                    });
+
+                    window.allUsersList = allUsers;
+
+                    if (typeof window.renderAdminBirthdays === 'function' && window.isAdminAuthenticated) window.renderAdminBirthdays();
+                }, (error) => {
+                    console.warn("Firestore users sync error", error);
                 });
+            };
 
-                window.allUsersList = allUsers;
-
-                if (typeof window.renderAdminBirthdays === 'function' && window.isAdminAuthenticated) window.renderAdminBirthdays();
-            }, (error) => {
-                console.warn("Firestore users sync error", error);
-            });
+            window.unsubscribeAdminUsers = function () {
+                if (unsubscribeAdminUsers) {
+                    unsubscribeAdminUsers();
+                    unsubscribeAdminUsers = null;
+                }
+                window.allUsersList = [];
+            };
 
             // Sincronización en tiempo real de Servicios personalizados (PC <-> Celular)
             onSnapshot(doc(db, 'settings', 'custom_services'), (docSnap) => {
                 if (docSnap.exists() && docSnap.data().services) {
-                    window.SERVICES_DATA = docSnap.data().services;
+                    if (typeof window.applyServicesData === 'function') {
+                        window.applyServicesData(docSnap.data().services);
+                    } else {
+                        window.SERVICES_DATA = docSnap.data().services;
+                    }
                     localStorage.setItem('ncv_custom_services', JSON.stringify(window.SERVICES_DATA));
                     if (typeof window.renderPublicServicesGrid === 'function') window.renderPublicServicesGrid();
                     if (typeof window.renderMultiServicesCheckboxes === 'function') window.renderMultiServicesCheckboxes();
@@ -3410,7 +3442,11 @@
             // Sincronización en tiempo real de Configuración de Descuentos & Banner
             onSnapshot(doc(db, 'settings', 'discount_settings'), (docSnap) => {
                 if (docSnap.exists()) {
-                    window.adminDiscountSettings = docSnap.data();
+                    if (typeof window.applyDiscountSettings === 'function') {
+                        window.applyDiscountSettings(docSnap.data());
+                    } else {
+                        window.adminDiscountSettings = docSnap.data();
+                    }
                     localStorage.setItem('ncv_discount_settings', JSON.stringify(window.adminDiscountSettings));
                     if (typeof window.updateDiscountUIElements === 'function') window.updateDiscountUIElements();
                 }
@@ -3442,6 +3478,40 @@
                     if (typeof window.renderAdminGalleryEditor === 'function' && window.isAdminAuthenticated) window.renderAdminGalleryEditor();
                 }
             }, (err) => { });
+
+            // Sincronización en tiempo real de la Llave de pago.
+            // Firestore es la autoridad: el valor del HTML solo es el arranque
+            // en frío mientras llega el primer snapshot.
+            onSnapshot(doc(db, 'settings', 'payment_key'), (docSnap) => {
+                if (docSnap.exists() && docSnap.data().value) {
+                    window.PAYMENT_KEY = String(docSnap.data().value);
+                    if (typeof window.applyPaymentKeyToUI === 'function') window.applyPaymentKeyToUI();
+                }
+            }, (err) => { });
+
+            // Meta de ingresos: configuración privada del panel. Solo un admin
+            // puede leerla, así que el listener se abre bajo demanda.
+            let unsubscribeIncomeGoal = null;
+
+            window.subscribeIncomeGoal = function () {
+                if (unsubscribeIncomeGoal) return;
+                unsubscribeIncomeGoal = onSnapshot(doc(db, 'settings', 'income_goal'), (docSnap) => {
+                    if (docSnap.exists()) {
+                        window.adminIncomeGoal = {
+                            amount: Number(docSnap.data().amount) || 0,
+                            type: docSnap.data().type || 'mensual'
+                        };
+                        if (typeof window.renderAdminCharts === 'function' && window.isAdminAuthenticated) window.renderAdminCharts();
+                    }
+                }, (err) => { });
+            };
+
+            window.unsubscribeIncomeGoal = function () {
+                if (unsubscribeIncomeGoal) {
+                    unsubscribeIncomeGoal();
+                    unsubscribeIncomeGoal = null;
+                }
+            };
 
             // Sincronización en tiempo real del Muro de la Comunidad
             onSnapshot(collection(db, 'community_posts'), (snapshot) => {
@@ -3477,6 +3547,15 @@
         }));
         let adminDiscountSettings = window.adminDiscountSettings;
 
+        // El script de módulo (Firebase) y este script clásico son ámbitos
+        // distintos. Estos setters existen para que un snapshot de Firestore
+        // actualice a la vez el `window.*` y el binding local, y no quede una
+        // copia obsoleta sirviendo precios viejos.
+        window.applyDiscountSettings = function (settings) {
+            adminDiscountSettings = settings;
+            window.adminDiscountSettings = settings;
+        };
+
         window.SERVICES_DATA = JSON.parse(localStorage.getItem('ncv_custom_services') || JSON.stringify([
             { id: 'mani_tradi', name: 'Manicura tradicional', price: 22000, durationHours: 1.5, category: 'manicura' },
             { id: 'mani_semi', name: 'Manicura semipermanente', price: 45000, durationHours: 2, category: 'manicura' },
@@ -3492,6 +3571,11 @@
             { id: 'forrado_nat', name: 'Forrado uña natural con polygel o acrílico', price: 80000, durationHours: 3, category: 'manicura' }
         ]));
         let SERVICES_DATA = window.SERVICES_DATA;
+
+        window.applyServicesData = function (services) {
+            SERVICES_DATA = services;
+            window.SERVICES_DATA = services;
+        };
 
 
 
@@ -3531,6 +3615,86 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
         }
+
+        // ── Capa de persistencia (Fase 4) ──────────────────────────────
+        // Regla del proyecto: Firestore es la autoridad de los datos de
+        // negocio. El orden correcto es SIEMPRE
+        //     escribir en Firestore -> confirmar -> refrescar cache/UI
+        // y nunca al reves. `localStorage` queda como cache de lectura para
+        // que la web siga mostrando algo si la red falla, jamas como fuente
+        // de verdad ni como control de acceso.
+
+        function isFirestoreReady() {
+            return Boolean(window.dbInstance && window.firestoreUtils && window.firestoreUtils.doc && window.firestoreUtils.setDoc);
+        }
+
+        /** Escribe un documento de `settings` en Firestore y espera confirmacion. */
+        async function saveSettingsDoc(docId, data, merge = true) {
+            if (!isFirestoreReady()) {
+                throw new Error('Firestore no está disponible en este momento.');
+            }
+            const { doc, setDoc } = window.firestoreUtils;
+            await setDoc(doc(window.dbInstance, 'settings', docId), data, { merge });
+        }
+
+        /** Guarda una copia local de solo lectura. Nunca es la autoridad. */
+        function cacheLocally(key, value) {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (error) {
+                console.warn(`No se pudo cachear ${key} localmente:`, error);
+            }
+        }
+
+        /** Lee la cache local. Devuelve `fallback` si no hay nada usable. */
+        function readCache(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw === null) return fallback;
+                const parsed = JSON.parse(raw);
+                return parsed === null || parsed === undefined ? fallback : parsed;
+            } catch (error) {
+                return fallback;
+            }
+        }
+
+        /**
+         * Guarda una configuracion administrativa: primero la nube, y solo si
+         * la nube confirma se actualiza la cache y la UI. Devuelve true/false
+         * en vez de lanzar, para que cada handler decida que mostrar.
+         */
+        async function persistAdminSetting({ docId, payload, cacheKey, cacheValue, onSuccess, errorMessage }) {
+            try {
+                await saveSettingsDoc(docId, payload);
+            } catch (error) {
+                console.error(`Error guardando settings/${docId} en Firestore:`, error);
+                showToast(errorMessage || 'No pudimos guardar el cambio en la nube. Intenta de nuevo.', 'error');
+                return false;
+            }
+
+            if (cacheKey) cacheLocally(cacheKey, cacheValue);
+            if (typeof onSuccess === 'function') onSuccess();
+            return true;
+        }
+
+        // ── Llave de pago ──────────────────────────────────────────────
+        // Autoridad: settings/payment_key. El valor de abajo es solo el
+        // arranque en frio hasta que llega el primer snapshot de Firestore.
+        window.PAYMENT_KEY = readCache('ncv_payment_key', '0090984300');
+
+        window.applyPaymentKeyToUI = function () {
+            const key = window.PAYMENT_KEY || '';
+            cacheLocally('ncv_payment_key', key);
+
+            ['llave-card-number', 'llave-display-number', 'llave-faq-number', 'llave-ai-number']
+                .forEach((id) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = key;
+                });
+
+            const adminInput = document.getElementById('admin-llave-number-input');
+            if (adminInput) adminInput.value = key;
+        };
 
         window.checkAdminRoute = function () {
             const hash = window.location.hash;
@@ -4279,7 +4443,7 @@
         };
 
 
-        window.toggleBlockEntireDate = function () {
+        window.toggleBlockEntireDate = async function () {
             const dateInput = document.getElementById('admin-block-date-input');
             const reasonInput = document.getElementById('admin-block-date-reason');
             if (!dateInput || !dateInput.value) {
@@ -4288,28 +4452,30 @@
             }
 
             const dateStr = dateInput.value;
-            let blockedDatesObj = JSON.parse(localStorage.getItem('ncv_blocked_dates_list') || '[]');
+            const blockedDatesObj = readCache('ncv_blocked_dates_list', []);
 
             const idx = blockedDatesObj.findIndex(b => b.date === dateStr);
-            if (idx >= 0) {
+            const wasBlocked = idx >= 0;
+            if (wasBlocked) {
                 blockedDatesObj.splice(idx, 1);
-                showToast(`Fecha ${dateStr} desbloqueada.`);
             } else {
                 blockedDatesObj.push({
                     date: dateStr,
                     reason: (reasonInput ? reasonInput.value.trim() : '') || 'Festivo / Cierre'
                 });
-                showToast(`Fecha ${dateStr} bloqueada totalmente.`);
             }
 
-            localStorage.setItem('ncv_blocked_dates_list', JSON.stringify(blockedDatesObj));
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'schedule_blocks'), { blockedDates: blockedDatesObj }, { merge: true });
-                } catch (e) { }
-            }
+            const saved = await persistAdminSetting({
+                docId: 'schedule_blocks',
+                payload: { blockedDates: blockedDatesObj },
+                cacheKey: 'ncv_blocked_dates_list',
+                cacheValue: blockedDatesObj,
+                errorMessage: 'No pudimos guardar el bloqueo de fecha en la nube.'
+            });
 
+            if (!saved) return;
+
+            showToast(wasBlocked ? `Fecha ${dateStr} desbloqueada.` : `Fecha ${dateStr} bloqueada totalmente.`);
             renderAdminBlockedDatesList();
             renderCalendar();
             renderTimeSlots();
@@ -4345,16 +4511,18 @@
             });
         };
 
-        window.removeBlockedDate = function (dateStr) {
-            let blockedDatesObj = JSON.parse(localStorage.getItem('ncv_blocked_dates_list') || '[]');
-            blockedDatesObj = blockedDatesObj.filter(b => b.date !== dateStr);
-            localStorage.setItem('ncv_blocked_dates_list', JSON.stringify(blockedDatesObj));
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'schedule_blocks'), { blockedDates: blockedDatesObj }, { merge: true });
-                } catch (e) { }
-            }
+        window.removeBlockedDate = async function (dateStr) {
+            const blockedDatesObj = readCache('ncv_blocked_dates_list', []).filter(b => b.date !== dateStr);
+
+            const saved = await persistAdminSetting({
+                docId: 'schedule_blocks',
+                payload: { blockedDates: blockedDatesObj },
+                cacheKey: 'ncv_blocked_dates_list',
+                cacheValue: blockedDatesObj,
+                errorMessage: 'No pudimos desbloquear la fecha en la nube.'
+            });
+
+            if (!saved) return;
 
             renderAdminBlockedDatesList();
             renderCalendar();
@@ -4398,8 +4566,8 @@
             });
         };
 
-        window.toggleAdminSlotBlock = function (dateStr, timeSlot) {
-            let blockedSlotsMap = JSON.parse(localStorage.getItem('ncv_blocked_time_slots') || '{}');
+        window.toggleAdminSlotBlock = async function (dateStr, timeSlot) {
+            const blockedSlotsMap = readCache('ncv_blocked_time_slots', {});
             if (!blockedSlotsMap[dateStr]) blockedSlotsMap[dateStr] = [];
 
             const idx = blockedSlotsMap[dateStr].indexOf(timeSlot);
@@ -4409,33 +4577,48 @@
                 blockedSlotsMap[dateStr].push(timeSlot);
             }
 
-            localStorage.setItem('ncv_blocked_time_slots', JSON.stringify(blockedSlotsMap));
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'schedule_blocks'), { blockedSlots: blockedSlotsMap }, { merge: true });
-                } catch (e) { }
-            }
+            const saved = await persistAdminSetting({
+                docId: 'schedule_blocks',
+                payload: { blockedSlots: blockedSlotsMap },
+                cacheKey: 'ncv_blocked_time_slots',
+                cacheValue: blockedSlotsMap,
+                errorMessage: 'No pudimos guardar el bloqueo de turno en la nube.'
+            });
+
+            if (!saved) return;
 
             renderAdminSlotPicker();
             renderTimeSlots();
             showToast(`Turno ${timeSlot} en ${dateStr} actualizado.`);
         };
 
-        window.saveAdminGoal = function () {
+        // Autoridad de la meta de ingresos: settings/income_goal, que es un
+        // documento privado (solo admin puede leerlo y escribirlo). Antes vivía
+        // en localStorage, así que cada dispositivo tenía su propia meta.
+        window.adminIncomeGoal = { amount: 0, type: 'mensual' };
+
+        window.saveAdminGoal = async function () {
             const goalInput = document.getElementById('admin-income-goal');
             const typeInput = document.getElementById('admin-goal-type');
             if (!goalInput || !typeInput) return;
 
             const goalVal = parseInt(goalInput.value, 10);
-            if (!isNaN(goalVal) && goalVal > 0) {
-                localStorage.setItem('ncv_income_goal', goalVal.toString());
-                localStorage.setItem('ncv_income_goal_type', typeInput.value);
-                showToast("✅ Meta de ingresos guardada exitosamente.");
-                updateGoalProgress();
-            } else {
+            if (isNaN(goalVal) || goalVal <= 0) {
                 showToast("❌ Ingresa un valor válido para la meta.", "error");
+                return;
             }
+
+            const saved = await persistAdminSetting({
+                docId: 'income_goal',
+                payload: { amount: goalVal, type: typeInput.value, salonId: 'nails-con-val' },
+                errorMessage: 'No pudimos guardar la meta de ingresos en la nube.'
+            });
+
+            if (!saved) return;
+
+            window.adminIncomeGoal = { amount: goalVal, type: typeInput.value };
+            showToast("✅ Meta de ingresos guardada exitosamente.");
+            updateGoalProgress();
         };
 
         window.updateGoalProgress = function () {
@@ -4535,14 +4718,14 @@
 
             const goalInput = document.getElementById('admin-income-goal');
             const typeInput = document.getElementById('admin-goal-type');
-            const savedGoal = localStorage.getItem('ncv_income_goal');
-            const savedType = localStorage.getItem('ncv_income_goal_type');
+            const savedGoal = window.adminIncomeGoal?.amount || 0;
+            const savedType = window.adminIncomeGoal?.type || '';
 
             if (typeInput && savedType) {
                 typeInput.value = savedType;
             }
-            if (goalInput && savedGoal && !goalInput.value) {
-                goalInput.value = savedGoal;
+            if (goalInput && savedGoal > 0 && !goalInput.value) {
+                goalInput.value = String(savedGoal);
             }
             if (typeof updateGoalProgress === 'function') {
                 updateGoalProgress();
@@ -5192,7 +5375,7 @@
             }
         }
 
-        window.saveAdminDiscountSettings = function (event) {
+        window.saveAdminDiscountSettings = async function (event) {
             event.preventDefault();
             const percentVal = document.getElementById('admin-loyalty-percent-input').value;
             const percent = parseInt(percentVal) >= 0 ? parseInt(percentVal) : 66;
@@ -5203,7 +5386,7 @@
             const themeSelect = document.getElementById('admin-ticket-theme-select');
             const ticketTheme = themeSelect ? themeSelect.value : 'purple';
 
-            adminDiscountSettings = {
+            const nextDiscountSettings = {
                 loyaltyPercent: percent,
                 rewardText: rewardText || "Manicura Semipermanente Con Descuento Especial",
                 ticketBadgeText: badgeText || "Tarjeta Club Fidelidad",
@@ -5211,22 +5394,25 @@
                 topBannerText: banner,
                 ticketTheme: ticketTheme || 'purple'
             };
-            window.adminDiscountSettings = adminDiscountSettings;
 
-            localStorage.setItem('ncv_discount_settings', JSON.stringify(adminDiscountSettings));
+            const saved = await persistAdminSetting({
+                docId: 'discount_settings',
+                payload: nextDiscountSettings,
+                cacheKey: 'ncv_discount_settings',
+                cacheValue: nextDiscountSettings,
+                errorMessage: 'No pudimos guardar la configuración de descuentos en la nube.'
+            });
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'discount_settings'), adminDiscountSettings, { merge: true });
-                } catch (e) { }
-            }
+            if (!saved) return;
+
+            adminDiscountSettings = nextDiscountSettings;
+            window.adminDiscountSettings = nextDiscountSettings;
 
             window.updateDiscountUIElements();
             showToast(`✨ ¡Premio, porcentaje (${percent}%) y diseño especial de ticket actualizados!`);
         };
 
-        window.saveAdminPopupSettings = function (event) {
+        window.saveAdminPopupSettings = async function (event) {
             event.preventDefault();
             const imageUrl = document.getElementById('admin-popup-image').value.trim();
             const title = document.getElementById('admin-popup-title').value.trim();
@@ -5240,20 +5426,18 @@
                 isActive: isActive
             };
 
-            window.adminPopupSettings = popupSettings;
-            localStorage.setItem('ncv_marketing_popup', JSON.stringify(popupSettings));
+            const saved = await persistAdminSetting({
+                docId: 'marketing_popup',
+                payload: popupSettings,
+                cacheKey: 'ncv_marketing_popup',
+                cacheValue: popupSettings,
+                errorMessage: 'No pudimos guardar el Pop-Up en la nube.'
+            });
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'marketing_popup'), popupSettings, { merge: true }).then(() => {
-                        showToast('🎈 Pop-Up guardado en la nube.');
-                    }).catch(e => {
-                        console.error(e);
-                        showToast('Error al guardar el Pop-Up.', 'error');
-                    });
-                } catch (e) { }
-            }
+            if (!saved) return;
+
+            window.adminPopupSettings = popupSettings;
+            showToast('🎈 Pop-Up guardado en la nube.');
         };
 
         window.populatePopupAdminFields = function () {
@@ -5607,7 +5791,7 @@
             });
         };
 
-        window.saveSingleServiceData = function (serviceId) {
+        window.saveSingleServiceData = async function (serviceId) {
             const priceInput = document.getElementById(`srv-price-${serviceId}`);
             const durationInput = document.getElementById(`srv-duration-${serviceId}`);
             if (!priceInput || !durationInput) return;
@@ -5616,23 +5800,33 @@
             const newDuration = parseFloat(durationInput.value);
 
             const idx = SERVICES_DATA.findIndex(s => s.id === serviceId);
-            if (idx >= 0 && !isNaN(newPrice) && !isNaN(newDuration)) {
-                SERVICES_DATA[idx].price = newPrice;
-                SERVICES_DATA[idx].durationHours = newDuration;
-                window.SERVICES_DATA = SERVICES_DATA;
-                localStorage.setItem('ncv_custom_services', JSON.stringify(SERVICES_DATA));
+            if (idx < 0 || isNaN(newPrice) || isNaN(newDuration)) return;
 
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'settings', 'custom_services'), { services: SERVICES_DATA }, { merge: true });
-                    } catch (e) { }
-                }
+            // Se construye la lista candidata sin tocar el estado vivo hasta
+            // que Firestore confirme: si la nube rechaza, los precios que ve la
+            // clienta siguen siendo los buenos.
+            const nextServices = SERVICES_DATA.map((service, i) => (
+                i === idx
+                    ? { ...service, price: newPrice, durationHours: newDuration }
+                    : service
+            ));
 
-                renderPublicServicesGrid();
-                renderMultiServicesCheckboxes();
-                showToast(`"${SERVICES_DATA[idx].name}" actualizado ($${newPrice.toLocaleString('es-CO')} COP / ${newDuration}h).`);
-            }
+            const saved = await persistAdminSetting({
+                docId: 'custom_services',
+                payload: { services: nextServices },
+                cacheKey: 'ncv_custom_services',
+                cacheValue: nextServices,
+                errorMessage: 'No pudimos guardar el servicio en la nube.'
+            });
+
+            if (!saved) return;
+
+            SERVICES_DATA = nextServices;
+            window.SERVICES_DATA = nextServices;
+
+            renderPublicServicesGrid();
+            renderMultiServicesCheckboxes();
+            showToast(`"${nextServices[idx].name}" actualizado ($${newPrice.toLocaleString('es-CO')} COP / ${newDuration}h).`);
         };
 
         window.saveAdminPaymentKeyChange = async function (event) {
@@ -5651,12 +5845,20 @@
                 return;
             }
 
-            const llaveCard = document.getElementById('llave-card-number');
-            const llaveDisplay = document.getElementById('llave-display-number');
-            if (llaveCard) llaveCard.textContent = newLlave;
-            if (llaveDisplay) llaveDisplay.textContent = newLlave;
+            // Antes este cambio solo tocaba el DOM y se perdía al recargar,
+            // además de no llegar al mensaje de WhatsApp. Ahora la autoridad
+            // es settings/payment_key.
+            const saved = await persistAdminSetting({
+                docId: 'payment_key',
+                payload: { value: newLlave, salonId: 'nails-con-val' },
+                errorMessage: 'No pudimos actualizar la llave de pago en la nube.'
+            });
 
-            showToast("Número de llave de pago actualizado.");
+            if (!saved) return;
+
+            window.PAYMENT_KEY = newLlave;
+            window.applyPaymentKeyToUI();
+            showToast("Número de llave de pago actualizado en toda la web.");
         };
 
         window.saveCustomFirebaseConfig = function (event) {
@@ -5824,7 +6026,7 @@
             else if (q.includes('abono') || q.includes('nequi') || q.includes('bancolombia') || q.includes('llave') || q.includes('reserva') || q.includes('pagar')) {
                 return `💳 <strong>Información sobre Abonos y Confirmación:</strong><br><br>
                 Para apartar tu cupo en la agenda solicitamos un abono fijo de <strong>$10.000 COP</strong>.<br>
-                📱 Transfiere a la Llave de pago: <strong class="text-amber-300 font-mono">0090984300</strong> desde tu app bancaria (Nequi / Bancolombia / Bre-B).<br>
+                📱 Transfiere a la Llave de pago: <strong class="text-amber-300 font-mono">${escapeHtml(window.PAYMENT_KEY)}</strong> desde tu app bancaria (Nequi / Bancolombia / Bre-B).<br>
                 Al presionar "Agendar por WhatsApp", adjuntas tu comprobante y el valor abonado se descuenta del total el día de tu cita.`;
             }
             else if (q.includes('horario') || q.includes('7') || q.includes('noche') || q.includes('turno')) {
@@ -5873,22 +6075,6 @@
                 role: 'client',
                 bookedCount
             };
-        }
-
-        function getLegacyBookedCount(phone, email) {
-            try {
-                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const normalizedPhone = (phone || '').replace(/\D/g, '');
-                const normalizedEmail = (email || '').toLowerCase();
-                const legacyUser = users.find(user => {
-                    const userPhone = (user.phone || '').replace(/\D/g, '');
-                    const userEmail = (user.email || '').toLowerCase();
-                    return userPhone === normalizedPhone || userEmail === normalizedEmail;
-                });
-                return Number(legacyUser?.bookedCount) || 0;
-            } catch (error) {
-                return 0;
-            }
         }
 
         function isValidEmailAddress(value) {
@@ -6027,25 +6213,28 @@
                 return;
             }
 
-            const bookedCount = getLegacyBookedCount(phone, email);
+            // La fidelidad NO puede venir del navegador: `ncv_users` es
+            // editable por quien sea desde la consola. Un perfil nuevo nace
+            // siempre en cero y solo el admin (Fase 7) puede acreditar
+            // estampas históricas.
             const safeUserProfile = buildSafeClientProfile({
                 uid: authUser.uid,
                 name,
                 phone,
                 email,
                 birthdate,
-                bookedCount
+                bookedCount: 0
             });
-            const cloudUserProfile = {
-                ...safeUserProfile,
-                role,
-                createdAt: serverTimestamp()
-            };
-
-            if (!window.dbInstance || !window.firestoreUtils || !window.firestoreUtils.doc || !window.firestoreUtils.setDoc) {
+            if (!isFirestoreReady() || !window.firestoreUtils.serverTimestamp) {
                 showToast("Tu cuenta se creó en Firebase Auth, pero no pudimos guardar tu perfil de cliente.", "error");
                 return;
             }
+
+            const cloudUserProfile = {
+                ...safeUserProfile,
+                role,
+                createdAt: window.firestoreUtils.serverTimestamp()
+            };
 
             try {
                 const { doc, setDoc } = window.firestoreUtils;
@@ -6199,22 +6388,11 @@
                 return;
             }
 
-            try {
-                const { doc, setDoc } = window.firestoreUtils;
-                await setDoc(doc(window.dbInstance, 'users', authUser.uid), {
-                    uid: safeSessionProfile.uid,
-                    salonId: safeSessionProfile.salonId,
-                    name: safeSessionProfile.name,
-                    phone: safeSessionProfile.phone,
-                    email: safeSessionProfile.email,
-                    birthdate: safeSessionProfile.birthdate,
-                    role: profileRole,
-                    bookedCount: safeSessionProfile.bookedCount,
-                    createdAt: firestoreProfile.createdAt || serverTimestamp()
-                }, { merge: true });
-            } catch (cloudWriteErr) {
-                console.warn("No pudimos sanear el perfil en Firestore:", cloudWriteErr);
-            }
+            // Antes, el login reescribía el documento completo del usuario
+            // (incluidos role, bookedCount y createdAt) en cada entrada. Eso
+            // convertía al navegador en escritor de campos que no le
+            // corresponden. Con Firestore como autoridad, el login solo LEE:
+            // la sesión local se deriva del documento, nunca al revés.
 
             persistCurrentClientSession(safeSessionProfile);
             upsertSafeLegacyClientRecord(safeSessionProfile);
@@ -6231,12 +6409,63 @@
             if (phoneInput) phoneInput.value = safeSessionProfile.phone;
         };
 
-        window.handleUserLogout = function () {
+        function clearClientSession() {
             currentUserSession = null;
             localStorage.removeItem('ncv_current_user');
             updateUserNavigationUI();
+            if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();
+        }
+
+        window.handleUserLogout = function () {
+            clearClientSession();
             closeUserProfileModal();
             showToast("Has cerrado sesión en tu cuenta.");
+        };
+
+        /**
+         * Reconstruye la sesión de cliente a partir de `users/{uid}` en
+         * Firestore. Es lo que resuelve el caso "hay usuario de Auth pero no
+         * hay documento de perfil": ahí la sesión local se descarta en vez de
+         * inventarse desde el navegador.
+         *
+         * El rol NUNCA se toma de `localStorage`. Si el documento dice que la
+         * cuenta es de administración, la sesión de cliente se limpia y el
+         * acceso admin sigue su propio camino (Firestore + Rules).
+         */
+        window.hydrateClientSession = async function (authUser) {
+            if (!authUser || authUser.isAnonymous || !isFirestoreReady()) return;
+
+            try {
+                const { doc, getDoc } = window.firestoreUtils;
+                const snap = await getDoc(doc(window.dbInstance, 'users', authUser.uid));
+
+                if (!snap.exists()) {
+                    clearClientSession();
+                    return;
+                }
+
+                const profile = snap.data() || {};
+                if (profile.role === 'admin') {
+                    clearClientSession();
+                    return;
+                }
+
+                persistCurrentClientSession(buildSafeClientSession({
+                    uid: authUser.uid,
+                    name: profile.name,
+                    phone: profile.phone,
+                    email: profile.email || authUser.email,
+                    birthdate: profile.birthdate,
+                    role: 'client',
+                    bookedCount: profile.bookedCount
+                }));
+
+                updateUserNavigationUI();
+                if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();
+                if (typeof refreshUserAppointmentsUI === 'function') refreshUserAppointmentsUI();
+            } catch (error) {
+                console.warn("No pudimos verificar tu perfil de cliente en Firestore:", error);
+            }
         };
 
         function updateUserNavigationUI() {
@@ -6601,11 +6830,11 @@
                 `💰 *Valor Total Estimado:* $${rawPriceTotal.toLocaleString('es-CO')} COP\n` +
                 `📅 *Fecha:* ${date}\n` +
                 `⏰ *Hora:* ${time}\n` +
-                `💳 *Abono de Reserva:* $10.000 COP a la Llave (0090984300)` +
+                `💳 *Abono de Reserva:* $10.000 COP a la Llave (${window.PAYMENT_KEY})` +
                 promoInfo +
                 imageInfo +
                 (notes ? `\n📝 *Notas:* ${notes}\n` : '\n') +
-                `\nHola Val! Adjunto el comprobante del abono de $10.000 COP a la llave 0090984300` +
+                `\nHola Val! Adjunto el comprobante del abono de $10.000 COP a la llave ${window.PAYMENT_KEY}` +
                 (bookingAttachedImage ? ` y la foto de referencia` : '') +
                 ` para confirmar mi cita.`;
 
@@ -6674,23 +6903,14 @@
                 } catch (e) { }
             }
 
+            // Aquí antes ocurrían dos cosas incorrectas:
+            //   1. se escribía `users/{telefono}`, una ruta legacy paralela a
+            //      `users/{uid}` que rompía la unicidad del perfil;
+            //   2. el navegador incrementaba `bookedCount` por su cuenta, es
+            //      decir, la clienta se acreditaba su propia fidelidad.
+            // Ambas desaparecen. La estampa pasa a derivarse de una cita
+            // completada y a registrarse en `loyalty_transactions` (Fase 7).
             if (currentUserSession) {
-                currentUserSession.bookedCount = (currentUserSession.bookedCount || 0) + 1;
-                localStorage.setItem('ncv_current_user', JSON.stringify(currentUserSession));
-
-                let users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const idx = users.findIndex(u => u.phone === currentUserSession.phone);
-                if (idx >= 0) {
-                    users[idx].bookedCount = currentUserSession.bookedCount;
-                    localStorage.setItem('ncv_users', JSON.stringify(users));
-                }
-
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        await setDoc(doc(window.dbInstance, 'users', currentUserSession.phone), currentUserSession, { merge: true });
-                    } catch (e) { }
-                }
                 updateLoyaltyCardUI();
             }
 
@@ -7146,6 +7366,7 @@
 
         let currentGalleryIndex = 0;
         let editingGalleryIndex = -1;
+        let galleryHydratedFromCache = false;
         let galleryNewImageBase64 = null;
 
         function renderGalleryPortfolio() {
@@ -7153,11 +7374,16 @@
             const adminAddBtnContainer = document.getElementById('admin-gallery-add-btn-container');
             if (!container) return;
 
-            let savedGallery = JSON.parse(localStorage.getItem('ncv_gallery_items') || 'null');
-            if (savedGallery && Array.isArray(savedGallery)) {
-                GALLERY_ITEMS_DATA = savedGallery;
-            } else {
-                localStorage.setItem('ncv_gallery_items', JSON.stringify(GALLERY_ITEMS_DATA));
+            // La autoridad es settings/gallery_items via onSnapshot. La cache
+            // local solo sirve para el primer pintado, antes de que llegue el
+            // snapshot o si la red falla.
+            if (!galleryHydratedFromCache) {
+                galleryHydratedFromCache = true;
+                const savedGallery = readCache('ncv_gallery_items', null);
+                if (Array.isArray(savedGallery) && savedGallery.length) {
+                    GALLERY_ITEMS_DATA = savedGallery;
+                    window.GALLERY_ITEMS_DATA = savedGallery;
+                }
             }
 
             if (adminAddBtnContainer) {
@@ -7261,20 +7487,24 @@
             lockBodyScroll();
         };
 
-        window.adminDeleteGalleryItem = function (index) {
+        window.adminDeleteGalleryItem = async function (index) {
             if (index < 0 || index >= GALLERY_ITEMS_DATA.length) return;
             const item = GALLERY_ITEMS_DATA[index];
             if (confirm(`¿Estás segura de eliminar "${item.title}" de la galería?`)) {
-                GALLERY_ITEMS_DATA.splice(index, 1);
-                window.GALLERY_ITEMS_DATA = GALLERY_ITEMS_DATA;
-                localStorage.setItem('ncv_gallery_items', JSON.stringify(GALLERY_ITEMS_DATA));
+                const nextItems = GALLERY_ITEMS_DATA.filter((_, i) => i !== index);
 
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'settings', 'gallery_items'), { items: GALLERY_ITEMS_DATA }, { merge: true });
-                    } catch (e) { }
-                }
+                const saved = await persistAdminSetting({
+                    docId: 'gallery_items',
+                    payload: { items: nextItems },
+                    cacheKey: 'ncv_gallery_items',
+                    cacheValue: nextItems,
+                    errorMessage: 'No pudimos eliminar la imagen en la nube.'
+                });
+
+                if (!saved) return;
+
+                GALLERY_ITEMS_DATA = nextItems;
+                window.GALLERY_ITEMS_DATA = nextItems;
 
                 renderGalleryPortfolio();
                 if (typeof renderAdminGalleryEditor === 'function') renderAdminGalleryEditor();
@@ -7282,7 +7512,7 @@
             }
         };
 
-        window.handleSaveGalleryItem = function (event) {
+        window.handleSaveGalleryItem = async function (event) {
             event.preventDefault();
             const title = document.getElementById('gallery-item-title').value.trim();
             const urlInput = document.getElementById('gallery-item-url').value.trim();
@@ -7302,29 +7532,28 @@
                 return;
             }
 
-            if (editingGalleryIndex >= 0) {
-                GALLERY_ITEMS_DATA[editingGalleryIndex] = {
-                    url: finalUrl,
-                    title: title
-                };
-                showToast("✏️ ¡Diseño de la galería actualizado!");
-            } else {
-                GALLERY_ITEMS_DATA.unshift({
-                    url: finalUrl,
-                    title: title
-                });
-                showToast("📸 ¡Nueva foto agregada exitosamente a la galería!");
-            }
+            const isEdit = editingGalleryIndex >= 0;
+            const nextItems = isEdit
+                ? GALLERY_ITEMS_DATA.map((item, i) => (
+                    i === editingGalleryIndex ? { url: finalUrl, title: title } : item
+                ))
+                : [{ url: finalUrl, title: title }, ...GALLERY_ITEMS_DATA];
 
-            window.GALLERY_ITEMS_DATA = GALLERY_ITEMS_DATA;
-            localStorage.setItem('ncv_gallery_items', JSON.stringify(GALLERY_ITEMS_DATA));
+            const saved = await persistAdminSetting({
+                docId: 'gallery_items',
+                payload: { items: nextItems },
+                cacheKey: 'ncv_gallery_items',
+                cacheValue: nextItems,
+                errorMessage: 'No pudimos guardar la imagen en la nube.'
+            });
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'settings', 'gallery_items'), { items: GALLERY_ITEMS_DATA }, { merge: true });
-                } catch (e) { }
-            }
+            if (!saved) return;
+
+            GALLERY_ITEMS_DATA = nextItems;
+            window.GALLERY_ITEMS_DATA = nextItems;
+            showToast(isEdit
+                ? "✏️ ¡Diseño de la galería actualizado!"
+                : "📸 ¡Nueva foto agregada exitosamente a la galería!");
 
             closeAddGalleryModal();
             renderGalleryPortfolio();
@@ -7871,9 +8100,13 @@
             initFormValidation();
 
             try {
-                const savedUser = localStorage.getItem('ncv_current_user');
-                if (savedUser) {
-                    currentUserSession = JSON.parse(savedUser);
+                // Rehidratación optimista para que la UI no parpadee. Es
+                // provisional: `hydrateClientSession()` la confirma o la borra
+                // en cuanto Firebase Auth resuelve. El rol se fuerza a
+                // 'client' porque un rol leído del navegador no vale nada.
+                const savedUser = readCache('ncv_current_user', null);
+                if (savedUser && savedUser.name) {
+                    currentUserSession = buildSafeClientSession({ ...savedUser, role: 'client' });
                     updateUserNavigationUI();
 
                     const nameInput = document.getElementById('form-name');
@@ -7883,6 +8116,7 @@
                 }
             } catch (e) { }
 
+            window.applyPaymentKeyToUI();
             renderPublicServicesGrid();
             renderCalendar();
             renderMultiServicesCheckboxes();

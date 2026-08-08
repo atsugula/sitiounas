@@ -5,6 +5,7 @@
   "description": "Sitio NailsConVal - HTML/CSS/JS vanilla sobre Firebase Auth + Cloud Firestore",
   "type": "module",
   "scripts": {
+    "check": "node tools/check-inline-scripts.mjs index.html",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.mjs\"",
     "emulators": "firebase emulators:start --only firestore",
     "deploy:rules": "firebase deploy --only firestore:rules",
