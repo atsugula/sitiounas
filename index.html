@@ -328,7 +328,7 @@
                 <a href="#" class="flex items-center gap-3 group">
                     <div
                         class="w-11 h-11 rounded-full ring-2 ring-brand-400/80 p-0.5 shadow-md shadow-brand-500/20 group-hover:scale-105 transition-all shrink-0 bg-gradient-to-tr from-brand-600 to-purple-400">
-                        <img src="./logo.jpg"
+                        <img loading="lazy" decoding="async" src="./logo.jpg"
                             alt="NailsConVal Logo" class="w-full h-full object-cover object-top rounded-full">
                     </div>
                     <div>
@@ -899,7 +899,7 @@
                                     class="mt-3 hidden relative bg-brand-50 p-3.5 rounded-2xl border border-brand-200 shadow-sm">
                                     <div class="flex items-center gap-3">
                                         <div class="relative shrink-0">
-                                            <img id="booking-image-preview" src="" alt="Vista previa de diseño"
+                                            <img loading="lazy" decoding="async" id="booking-image-preview" src="" alt="Vista previa de diseño"
                                                 class="w-20 h-20 object-cover rounded-xl border-2 border-brand-400 shadow-md">
                                             <button type="button" onclick="removeBookingImageAttachment()"
                                                 class="absolute -top-2 -right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-md hover:bg-rose-600 transition-colors cursor-pointer"
@@ -940,7 +940,7 @@
                                 <div id="deposit-receipt-preview-container"
                                     class="mt-2.5 hidden bg-amber-50 p-3 rounded-2xl border border-amber-200">
                                     <div class="flex items-center gap-3">
-                                        <img id="deposit-receipt-preview" src="" alt="Vista previa del comprobante"
+                                        <img loading="lazy" decoding="async" id="deposit-receipt-preview" src="" alt="Vista previa del comprobante"
                                             class="w-16 h-16 object-cover rounded-xl border border-amber-400 shadow-xs shrink-0">
                                         <div class="overflow-hidden">
                                             <span
@@ -1036,7 +1036,7 @@
                             class="absolute -inset-4 rounded-3xl bg-gradient-to-tr from-brand-600 to-brand-300 opacity-30 blur-lg">
                         </div>
                         <div class="relative rounded-3xl overflow-hidden border-4 border-white shadow-2xl aspect-[4/5]">
-                            <img src="./logo.jpg"
+                            <img loading="lazy" decoding="async" src="./logo.jpg"
                                 alt="Valeria - Creadora de NailsConVal" class="w-full h-full object-cover object-top">
                         </div>
                     </div>
@@ -1124,7 +1124,7 @@
                     <p class="text-xs text-gray-500 mb-6">Comparte una idea de diseño, pregunta o muestra la foto .jpg
                         de tus uñas.</p>
 
-                    <form id="community-post-form" onsubmit="submitCommunityPost(event)" class="space-y-4">
+                    <form id="community-post-form" onsubmit="withBusyForm(this, event, submitCommunityPost, 'Publicando…')" class="space-y-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Tu Nombre o
                                 Apodo</label>
@@ -1158,7 +1158,7 @@
                             <div id="comm-preview-container"
                                 class="mt-3 hidden relative bg-brand-50 p-3 rounded-2xl border border-brand-200">
                                 <div class="flex items-center gap-3">
-                                    <img id="comm-photo-preview" src="#" alt="Vista previa"
+                                    <img loading="lazy" decoding="async" id="comm-photo-preview" src="#" alt="Vista previa"
                                         class="w-16 h-16 object-cover rounded-xl border border-brand-300 shadow-sm shrink-0">
                                     <div class="overflow-hidden">
                                         <p class="text-xs font-bold text-gray-800 truncate"
@@ -1220,7 +1220,7 @@
                 <p class="text-xs text-gray-500 text-center mb-6">Tu valoración es muy importante para seguir creciendo.
                     Puedes adjuntar una foto de tu resultado.</p>
 
-                <form id="review-form" onsubmit="submitNewReview(event)" class="space-y-4">
+                <form id="review-form" onsubmit="withBusyForm(this, event, submitNewReview, 'Publicando…')" class="space-y-4">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Tu Nombre</label>
@@ -1260,7 +1260,7 @@
                         <input type="file" id="rev-photo" accept="image/*" onchange="previewReviewImage(event)"
                             class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-brand-100 file:text-brand-700 hover:file:bg-brand-200 cursor-pointer">
                         <div id="photo-preview-container" class="mt-3 hidden">
-                            <img id="photo-preview" src="#" alt="Vista previa de foto"
+                            <img loading="lazy" decoding="async" id="photo-preview" src="#" alt="Vista previa de foto"
                                 class="w-24 h-24 object-cover rounded-xl border border-brand-200 shadow-sm">
                         </div>
                     </div>
@@ -1480,7 +1480,7 @@
             <div class="flex flex-col sm:flex-row justify-between items-center gap-6 pb-8 border-b border-white/10">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full ring-2 ring-brand-400 overflow-hidden shrink-0">
-                        <img src="./logo.jpg"
+                        <img loading="lazy" decoding="async" src="./logo.jpg"
                             alt="NailsConVal" class="w-full h-full object-cover object-top">
                     </div>
                     <span class="font-serif text-2xl font-bold tracking-tight">NailsConVal</span>
@@ -1560,24 +1560,24 @@
         </span>
     </a>
 
-    <div id="lightbox-modal"
+    <div id="lightbox-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex items-center justify-center p-4">
-        <button onclick="closeLightbox()"
+        <button onclick="closeLightbox()" aria-label="Cerrar"
             class="absolute top-6 right-6 text-white text-3xl hover:text-brand-300 transition-colors cursor-pointer">
             <i class="fa-solid fa-xmark"></i>
         </button>
         <div class="max-w-3xl w-full text-center">
-            <img id="lightbox-img" src="" alt="Ampliada"
+            <img loading="lazy" decoding="async" id="lightbox-img" src="" alt="Ampliada"
                 class="max-h-[80vh] mx-auto rounded-2xl shadow-2xl object-contain">
             <p id="lightbox-caption" class="text-white font-serif text-lg mt-4 font-medium"></p>
         </div>
     </div>
 
     <!-- ── WHATSAPP PREVIEW MODAL ── -->
-    <div id="wa-preview-modal" class="fixed inset-0 z-[1000] hidden items-center justify-center p-4"
+    <div id="wa-preview-modal" role="dialog" aria-modal="true" class="fixed inset-0 z-[1000] hidden items-center justify-center p-4"
         style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
         <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl transform transition-all relative">
-            <button onclick="closeWaPreviewModal()"
+            <button onclick="closeWaPreviewModal()" aria-label="Cerrar"
                 class="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 flex items-center justify-center text-lg transition-all cursor-pointer">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1601,12 +1601,12 @@
                 </div>
             </div>
             <div class="p-6 pt-0 flex gap-3">
-                <button onclick="closeWaPreviewModal()"
+                <button onclick="closeWaPreviewModal()" aria-label="Cerrar"
                     class="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer">
                     Editar Datos
                 </button>
-                <button onclick="confirmWhatsAppBooking()"
-                    class="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                <button onclick="withBusyButton(this, confirmWhatsAppBooking, 'Apartando turno…')"
+                    class="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
                     <span>Enviar</span>
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
@@ -1617,7 +1617,7 @@
     <!-- ══════════════════════════════════════════════════════════════════
          POP-UP AUTH MODAL — NailsConVal Premium Sign-in & Register
     ════════════════════════════════════════════════════════════════════ -->
-    <div id="user-auth-modal" class="fixed inset-0 z-[999] hidden items-center justify-center p-4"
+    <div id="user-auth-modal" role="dialog" aria-modal="true" class="fixed inset-0 z-[999] hidden items-center justify-center p-4"
         style="background:rgba(30,11,80,0.82);backdrop-filter:blur(8px);">
         <div class="ncv-auth-card bg-white rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden border border-purple-200"
             style="max-height:95vh;overflow-y:auto;">
@@ -1682,7 +1682,7 @@
                 </div>
 
                 <!-- LOGIN FORM -->
-                <form id="auth-login-form" onsubmit="handleUserLogin(event)" class="space-y-4 pb-6">
+                <form id="auth-login-form" onsubmit="withBusyForm(this, event, handleUserLogin, 'Entrando…')" class="space-y-4 pb-6">
                     <div>
                         <label
                             class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Correo
@@ -1712,7 +1712,7 @@
                 </form>
 
                 <!-- REGISTER FORM -->
-                <form id="auth-register-form" onsubmit="handleUserRegister(event)" class="space-y-3 pb-6 hidden">
+                <form id="auth-register-form" onsubmit="withBusyForm(this, event, handleUserRegister, 'Creando cuenta…')" class="space-y-3 pb-6 hidden">
                     <div>
                         <label
                             class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Nombre
@@ -1757,11 +1757,11 @@
         </div>
     </div>
 
-    <div id="user-profile-modal"
+    <div id="user-profile-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div
             class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative border border-brand-200 max-h-[90vh] overflow-y-auto">
-            <button onclick="closeUserProfileModal()"
+            <button onclick="closeUserProfileModal()" aria-label="Cerrar"
                 class="absolute top-5 right-5 text-gray-400 hover:text-gray-800 text-2xl cursor-pointer">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1829,7 +1829,7 @@
                     <i class="fa-solid fa-pen-to-square text-brand-600"></i>
                     <span>Editar mis datos</span>
                 </summary>
-                <form onsubmit="handleClientProfileUpdate(event)" class="p-4 space-y-3">
+                <form onsubmit="withBusyForm(this, event, handleClientProfileUpdate, 'Guardando…')" class="p-4 space-y-3">
                     <div>
                         <label
                             class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Nombre
@@ -1873,11 +1873,11 @@
         </div>
     </div>
 
-    <div id="admin-auth-modal"
+    <div id="admin-auth-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div
             class="bg-brand-950 text-white rounded-3xl max-w-sm w-full p-6 sm:p-8 shadow-2xl relative border border-amber-400/40 text-center">
-            <button onclick="closeAdminAuthModal()"
+            <button onclick="closeAdminAuthModal()" aria-label="Cerrar"
                 class="absolute top-5 right-5 text-gray-400 hover:text-white text-xl cursor-pointer">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1891,7 +1891,7 @@
             <p class="text-xs text-brand-200 mb-6">Autenticación requerida con Firebase Authentication
                 (Email/Contraseña).</p>
 
-            <form onsubmit="handleAdminAuthSubmit(event)" class="space-y-4 text-left">
+            <form onsubmit="withBusyForm(this, event, handleAdminAuthSubmit, 'Verificando…')" class="space-y-4 text-left">
                 <div>
                     <label class="block text-xs font-bold text-amber-300 uppercase mb-1">Correo Administradora</label>
                     <input type="email" id="admin-email-input" required placeholder="admin@nailsconval.com"
@@ -1912,11 +1912,11 @@
     </div>
 
     <!-- MODAL DE CONSULTA Y CANCELACIÓN DE CITAS PARA CLIENTES -->
-    <div id="client-cancellation-modal"
+    <div id="client-cancellation-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-brand-950/80 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div
             class="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-brand-200 relative max-h-[90vh] overflow-y-auto">
-            <button onclick="closeClientCancellationModal()"
+            <button onclick="closeClientCancellationModal()" aria-label="Cerrar"
                 class="absolute top-5 right-5 text-gray-400 hover:text-gray-700 text-lg cursor-pointer">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1964,9 +1964,9 @@
     </div>
 
     <!-- MODAL DE VISOR INTERACTIVO DE GALERÍA DE COMUNIDAD (CARRUSEL) -->
-    <div id="community-carousel-modal"
+    <div id="community-carousel-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex items-center justify-center p-4">
-        <button onclick="closeCommunityCarouselModal()"
+        <button onclick="closeCommunityCarouselModal()" aria-label="Cerrar"
             class="absolute top-6 right-6 text-white text-3xl font-bold z-50 hover:text-brand-300 cursor-pointer">
             <i class="fa-solid fa-xmark"></i>
         </button>
@@ -1984,7 +1984,7 @@
 
             <div
                 class="bg-gray-950 rounded-3xl overflow-hidden shadow-2xl border border-white/10 max-h-[85vh] w-full flex flex-col items-center">
-                <img id="community-carousel-img" src="" alt="Foto Comunidad"
+                <img loading="lazy" decoding="async" id="community-carousel-img" src="" alt="Foto Comunidad"
                     class="max-h-[60vh] w-auto object-contain p-4">
                 <div class="p-6 text-center text-white bg-gray-900 w-full border-t border-gray-800">
                     <span id="community-carousel-author"
@@ -1999,7 +1999,7 @@
     <!-- MODAL DE VISOR INTERACTIVO DE GALERÍA PRINCIPAL CON FLECHAS -->
     <div id="lightbox-modal"
         class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex items-center justify-center p-4">
-        <button onclick="closeLightbox()"
+        <button onclick="closeLightbox()" aria-label="Cerrar"
             class="absolute top-6 right-6 text-white text-3xl font-bold z-50 hover:text-brand-300 cursor-pointer">
             <i class="fa-solid fa-xmark"></i>
         </button>
@@ -2019,7 +2019,7 @@
 
             <div
                 class="bg-gray-950 rounded-3xl overflow-hidden shadow-2xl border border-white/10 max-h-[85vh] w-full flex flex-col items-center">
-                <img id="lightbox-img" src="" alt="Foto Galería" class="max-h-[65vh] w-auto object-contain p-4">
+                <img loading="lazy" decoding="async" id="lightbox-img" src="" alt="Foto Galería" class="max-h-[65vh] w-auto object-contain p-4">
                 <div class="p-5 text-center text-white bg-gray-900 w-full border-t border-gray-800">
                     <span id="lightbox-counter"
                         class="text-xs text-brand-300 font-bold block uppercase tracking-wider mb-1">NailsConVal</span>
@@ -2036,11 +2036,11 @@
 
 
     <!-- MODAL DE GESTIÓN DE FOTO DE GALERÍA DE DISEÑOS (ADMIN) -->
-    <div id="admin-gallery-modal"
+    <div id="admin-gallery-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4">
         <div
             class="bg-gray-900 text-gray-100 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-purple-500/40 relative">
-            <button onclick="closeAddGalleryModal()"
+            <button onclick="closeAddGalleryModal()" aria-label="Cerrar"
                 class="absolute top-5 right-5 text-gray-400 hover:text-white text-lg cursor-pointer">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -2056,7 +2056,7 @@
                 </div>
             </div>
 
-            <form onsubmit="handleSaveGalleryItem(event)" class="space-y-4">
+            <form onsubmit="withBusyForm(this, event, handleSaveGalleryItem, 'Guardando…')" class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-purple-300 uppercase mb-1">Título del Diseño</label>
                     <input type="text" id="gallery-item-title" required placeholder="Ej: Spider Web & Pink Glitter"
@@ -2079,7 +2079,7 @@
 
                 <div id="gallery-preview-container"
                     class="hidden bg-gray-950 p-3 rounded-2xl border border-gray-800 flex items-center gap-3">
-                    <img id="gallery-photo-preview" src="#" alt="Vista previa"
+                    <img loading="lazy" decoding="async" id="gallery-photo-preview" src="#" alt="Vista previa"
                         class="w-16 h-16 object-cover rounded-xl border border-gray-700">
                     <span class="text-xs text-gray-300 font-medium">Vista previa de la foto</span>
                 </div>
@@ -2093,7 +2093,7 @@
         </div>
     </div>
 
-    <div id="admin-panel-modal"
+    <div id="admin-panel-modal" role="dialog" aria-modal="true"
         class="fixed inset-0 z-50 bg-gray-950 text-gray-100 hidden flex flex-col overflow-hidden">
         <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
@@ -2113,7 +2113,7 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <button onclick="closeAdminPanelModal()"
+                <button onclick="closeAdminPanelModal()" aria-label="Cerrar"
                     class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border border-gray-700">
                     <i class="fa-solid fa-globe"></i>
                     <span>Volver a la Web</span>
@@ -2448,7 +2448,7 @@
                             <p class="text-xs text-gray-400">Configura la tarjeta automática. Solo afecta a clientas que
                                 completen 10 citas.</p>
                         </div>
-                        <form onsubmit="saveAdminDiscountSettings(event)" class="border-t border-gray-800 pt-6">
+                        <form onsubmit="withBusyForm(this, event, saveAdminDiscountSettings, 'Guardando…')" class="border-t border-gray-800 pt-6">
                             <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
                                 <div class="lg:col-span-3 space-y-6">
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -2613,7 +2613,7 @@
                                     id="admin-popup-status-text">Inactivo</span>
                             </label>
                         </div>
-                        <form onsubmit="saveAdminPopupSettings(event)" class="border-t border-gray-800 pt-6">
+                        <form onsubmit="withBusyForm(this, event, saveAdminPopupSettings, 'Guardando…')" class="border-t border-gray-800 pt-6">
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div class="space-y-6">
                                     <div>
@@ -2644,7 +2644,7 @@
                                         class="bg-gray-950 rounded-2xl border border-gray-800 overflow-hidden relative shadow-lg group">
                                         <div
                                             class="aspect-[4/3] bg-gray-900 w-full flex items-center justify-center overflow-hidden">
-                                            <img id="admin-popup-preview-img" src=""
+                                            <img loading="lazy" decoding="async" id="admin-popup-preview-img" src=""
                                                 class="w-full h-full object-cover hidden" alt="Vista previa">
                                             <i id="admin-popup-preview-icon"
                                                 class="fa-solid fa-image text-4xl text-gray-700"></i>
@@ -2844,13 +2844,13 @@
                                         mantener las métricas al día.</p>
                                 </div>
                             </div>
-                            <button onclick="closeAdminWalkInModal()"
+                            <button onclick="closeAdminWalkInModal()" aria-label="Cerrar"
                                 class="text-gray-400 hover:text-rose-400 text-xl cursor-pointer hover:bg-rose-950/50 w-10 h-10 rounded-xl flex items-center justify-center transition-colors">
                                 <i class="fa-solid fa-xmark"></i>
                             </button>
                         </div>
 
-                        <form onsubmit="handleAdminWalkInSubmit(event)" class="space-y-5 relative z-10">
+                        <form onsubmit="withBusyForm(this, event, handleAdminWalkInSubmit, 'Registrando cita…')" class="space-y-5 relative z-10">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 <div>
                                     <label
@@ -3156,7 +3156,7 @@
                         <span>Seguridad & Configuración</span>
                     </h3>
 
-                    <form onsubmit="saveAdminPasswordChange(event)"
+                    <form onsubmit="withBusyForm(this, event, saveAdminPasswordChange, 'Actualizando…')"
                         class="space-y-4 bg-gray-950 p-5 rounded-2xl border border-gray-800">
                         <h4 class="font-bold text-sm text-amber-300 flex items-center gap-2">
                             <i class="fa-solid fa-key"></i>
@@ -3182,7 +3182,7 @@
                         </button>
                     </form>
 
-                    <form onsubmit="saveAdminPaymentKeyChange(event)" class="space-y-4 pt-2">
+                    <form onsubmit="withBusyForm(this, event, saveAdminPaymentKeyChange, 'Guardando…')" class="space-y-4 pt-2">
                         <div>
                             <label class="block text-xs font-bold text-gray-300 uppercase mb-1">Número de la Llave de
                                 Pago</label>
@@ -3765,6 +3765,170 @@
             return clean || '';
         }
 
+        // ── Diálogos y estados de carga (Fase 10) ──────────────────────
+        // `prompt()` y `confirm()` del navegador bloquean el hilo, no se
+        // pueden estilar, en móvil aparecen como avisos del sistema —a menudo
+        // con la opción de "impedir que esta página cree más diálogos"— y no
+        // son navegables con teclado dentro de la página. Se sustituyen por un
+        // diálogo propio que devuelve una promesa.
+
+        let activeDialogResolver = null;
+
+        function ensureDialogRoot() {
+            let root = document.getElementById('ncv-dialog');
+            if (root) return root;
+
+            root = document.createElement('div');
+            root.id = 'ncv-dialog';
+            root.className = 'fixed inset-0 z-[1000] hidden items-center justify-center p-4 bg-black/70 backdrop-blur-sm';
+            root.setAttribute('role', 'dialog');
+            root.setAttribute('aria-modal', 'true');
+            root.setAttribute('aria-labelledby', 'ncv-dialog-title');
+            root.innerHTML = `
+                <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-brand-200">
+                    <h3 id="ncv-dialog-title" class="font-serif text-lg font-bold text-brand-950 mb-1"></h3>
+                    <p id="ncv-dialog-message" class="text-xs text-gray-600 mb-4 whitespace-pre-line"></p>
+                    <input id="ncv-dialog-input" class="ncv-input mb-4 hidden" aria-labelledby="ncv-dialog-message">
+                    <div class="flex gap-2">
+                        <button type="button" id="ncv-dialog-cancel"
+                            class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer">
+                            Cancelar
+                        </button>
+                        <button type="button" id="ncv-dialog-accept"
+                            class="flex-1 bg-brand-700 hover:bg-brand-800 text-white font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer">
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(root);
+
+            root.querySelector('#ncv-dialog-cancel').addEventListener('click', () => closeDialog(null));
+            root.querySelector('#ncv-dialog-accept').addEventListener('click', () => {
+                const input = root.querySelector('#ncv-dialog-input');
+                closeDialog(input.classList.contains('hidden') ? true : input.value);
+            });
+            root.addEventListener('click', (event) => {
+                if (event.target === root) closeDialog(null);
+            });
+            root.querySelector('#ncv-dialog-input').addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    root.querySelector('#ncv-dialog-accept').click();
+                }
+            });
+
+            return root;
+        }
+
+        function closeDialog(value) {
+            const root = document.getElementById('ncv-dialog');
+            if (root) {
+                root.classList.add('hidden');
+                root.classList.remove('flex');
+            }
+            unlockBodyScroll();
+            const resolve = activeDialogResolver;
+            activeDialogResolver = null;
+            if (resolve) resolve(value);
+        }
+
+        function openDialog({ title, message, defaultValue, inputType, confirmLabel, danger }) {
+            const root = ensureDialogRoot();
+            const input = root.querySelector('#ncv-dialog-input');
+            const accept = root.querySelector('#ncv-dialog-accept');
+
+            root.querySelector('#ncv-dialog-title').textContent = title;
+            root.querySelector('#ncv-dialog-message').textContent = message || '';
+
+            if (defaultValue === undefined) {
+                input.classList.add('hidden');
+                input.value = '';
+            } else {
+                input.classList.remove('hidden');
+                input.type = inputType || 'text';
+                input.value = defaultValue || '';
+            }
+
+            accept.textContent = confirmLabel || 'Aceptar';
+            accept.className = danger
+                ? 'flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer'
+                : 'flex-1 bg-brand-700 hover:bg-brand-800 text-white font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer';
+
+            root.classList.remove('hidden');
+            root.classList.add('flex');
+            lockBodyScroll();
+
+            setTimeout(() => {
+                if (input.classList.contains('hidden')) accept.focus();
+                else { input.focus(); input.select(); }
+            }, 30);
+
+            return new Promise((resolve) => { activeDialogResolver = resolve; });
+        }
+
+        /** Confirmación. Devuelve `true` o `false`. */
+        window.ncvConfirm = function (message, options = {}) {
+            return openDialog({
+                title: options.title || '¿Confirmas?',
+                message,
+                confirmLabel: options.confirmLabel || 'Sí, continuar',
+                danger: options.danger !== false
+            }).then(Boolean);
+        };
+
+        /** Entrada de texto. Devuelve el valor o `null` si se cancela. */
+        window.ncvPrompt = function (message, options = {}) {
+            return openDialog({
+                title: options.title || 'Escribe un dato',
+                message,
+                defaultValue: options.defaultValue || '',
+                inputType: options.inputType,
+                confirmLabel: options.confirmLabel || 'Guardar',
+                danger: false
+            }).then((value) => (value === null ? null : String(value)));
+        };
+
+        /**
+         * Ejecuta una acción asíncrona bloqueando el botón mientras dura.
+         *
+         * Desde la Fase 5 reservar es una transacción que tarda: sin esto, la
+         * clienta pulsa "Confirmar" dos veces y se lanzan dos reservas. La
+         * segunda fallaría por lock ocupado, pero le mostraría un error
+         * desconcertante sobre su propia cita.
+         */
+        async function withBusyButton(button, action, busyLabel = 'Procesando…') {
+            if (!button) return action();
+            if (button.dataset.ncvBusy === '1') return undefined;
+
+            const originalHtml = button.innerHTML;
+            button.dataset.ncvBusy = '1';
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i><span>${escapeHtml(busyLabel)}</span>`;
+
+            try {
+                return await action();
+            } finally {
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+                delete button.dataset.ncvBusy;
+            }
+        }
+
+        /**
+         * Igual que `withBusyButton` pero para formularios: localiza el botón
+         * de envío y lo bloquea mientras el manejador trabaja.
+         *
+         * El manejador se invoca de forma síncrona, así que su
+         * `event.preventDefault()` sigue llegando a tiempo.
+         */
+        window.withBusyForm = function (form, event, action, busyLabel) {
+            const button = form.querySelector('button[type="submit"], button:not([type])');
+            return withBusyButton(button, () => action(event), busyLabel);
+        };
+
         // ── Capa de persistencia (Fase 4) ──────────────────────────────
         // Regla del proyecto: Firestore es la autoridad de los datos de
         // negocio. El orden correcto es SIEMPRE
@@ -3855,14 +4019,55 @@
 
         // ── Utilidades globales de bloqueo de scroll del body ──
         // Evita que iOS Safari scrollee el fondo detrás de modales abiertos.
+        //
+        // Se lleva un contador porque los modales se pueden apilar: si dos
+        // están abiertos y se cierra uno, el scroll no debe volver todavía.
+        let bodyScrollLocks = 0;
+
         function lockBodyScroll() {
+            bodyScrollLocks += 1;
             document.body.style.overflow = 'hidden';
             document.body.style.touchAction = 'none';
         }
+
         function unlockBodyScroll() {
+            bodyScrollLocks = Math.max(0, bodyScrollLocks - 1);
+            if (bodyScrollLocks > 0) return;
             document.body.style.overflow = '';
             document.body.style.touchAction = '';
         }
+
+        /**
+         * Cierra con Escape el modal visible que esté más arriba.
+         *
+         * Antes no había forma de salir con teclado: había que localizar y
+         * pulsar la aspa. Esto también ayuda en móvil cuando el aspa queda
+         * fuera de la pantalla.
+         */
+        const ESCAPABLE_MODALS = [
+            { id: 'ncv-dialog', close: () => closeDialog(null) },
+            { id: 'wa-preview-modal', close: () => window.closeWaPreviewModal?.() },
+            { id: 'admin-gallery-modal', close: () => window.closeAddGalleryModal?.() },
+            { id: 'community-carousel-modal', close: () => window.closeCommunityCarouselModal?.() },
+            { id: 'lightbox-modal', close: () => window.closeLightbox?.() },
+            { id: 'client-cancellation-modal', close: () => window.closeClientCancellationModal?.() },
+            { id: 'user-profile-modal', close: () => window.closeUserProfileModal?.() },
+            { id: 'user-auth-modal', close: () => window.closeUserAuthModal?.() },
+            { id: 'admin-auth-modal', close: () => window.closeAdminAuthModal?.() }
+        ];
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+
+            for (const modal of ESCAPABLE_MODALS) {
+                const el = document.getElementById(modal.id);
+                if (el && !el.classList.contains('hidden')) {
+                    event.preventDefault();
+                    modal.close();
+                    return;
+                }
+            }
+        });
 
         async function checkFirebaseAdminRole(user) {
             if (!user || user.isAnonymous || !user.uid || !window.dbInstance || !window.firestoreUtils) {
@@ -6060,10 +6265,16 @@
 
         /** Diálogo del panel para ajustar estampas de una clienta. */
         window.promptAdminLoyaltyAdjustment = async function (userId, clientName) {
-            const rawDelta = prompt(`Ajuste de estampas para ${clientName || 'la clienta'}.\nUsa un número entero (por ejemplo 1 o -1):`);
+            const rawDelta = await window.ncvPrompt(
+                'Usa un número entero. Por ejemplo 1 para sumar una estampa, o -1 para restarla.',
+                { title: `Ajustar estampas de ${clientName || 'la clienta'}`, inputType: 'number', confirmLabel: 'Continuar' }
+            );
             if (rawDelta === null) return;
 
-            const reason = prompt('Motivo del ajuste (queda registrado en el historial):');
+            const reason = await window.ncvPrompt(
+                'Este motivo queda guardado en el historial de fidelidad junto a tu usuario.',
+                { title: 'Motivo del ajuste', confirmLabel: 'Aplicar ajuste' }
+            );
             if (reason === null) return;
 
             await window.adminAdjustClientLoyalty(userId, parseInt(rawDelta, 10), reason);
@@ -6829,7 +7040,10 @@
             const suggested = currentUserSession?.email
                 || document.getElementById('login-identifier')?.value.trim()
                 || '';
-            const input = prompt('Escribe tu correo electrónico y te enviamos un enlace para restablecer tu contraseña:', suggested);
+            const input = await window.ncvPrompt(
+                'Te enviaremos un enlace para restablecer tu contraseña.',
+                { title: 'Recuperar contraseña', defaultValue: suggested, inputType: 'email', confirmLabel: 'Enviar enlace' }
+            );
             if (input === null) return;
 
             const email = input.trim().toLowerCase();
@@ -8135,7 +8349,7 @@
         window.adminDeleteGalleryItem = async function (index) {
             if (index < 0 || index >= GALLERY_ITEMS_DATA.length) return;
             const item = GALLERY_ITEMS_DATA[index];
-            if (confirm(`¿Estás segura de eliminar "${item.title}" de la galería?`)) {
+            if (await window.ncvConfirm(`Se eliminará "${item.title}" de la galería pública.`, { title: 'Eliminar imagen', confirmLabel: 'Sí, eliminar' })) {
                 const nextItems = GALLERY_ITEMS_DATA.filter((_, i) => i !== index);
 
                 const saved = await persistAdminSetting({
@@ -8216,7 +8430,7 @@
                 card.innerHTML = `
                     <div class="space-y-2">
                         <div class="relative rounded-xl overflow-hidden aspect-square bg-gray-900 border border-gray-800">
-                            <img src="${safeImageSrc(item.url)}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">
+                            <img loading="lazy" decoding="async" src="${safeImageSrc(item.url)}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">
                         </div>
                         <h5 class="font-bold text-white text-xs truncate">${escapeHtml(item.title)}</h5>
                     </div>
@@ -8371,7 +8585,7 @@
                 if (rev.photoUrl) {
                     photoHtml = `
                         <div class="mt-3 rounded-xl overflow-hidden max-h-48 border border-brand-200 shadow-xs">
-                            <img src="${safeImageSrc(rev.photoUrl)}" alt="Foto de ${escapeHtml(rev.name)}" class="w-full h-40 object-cover hover:scale-105 transition-transform duration-300">
+                            <img loading="lazy" decoding="async" src="${safeImageSrc(rev.photoUrl)}" alt="Foto de ${escapeHtml(rev.name)}" class="w-full h-40 object-cover hover:scale-105 transition-transform duration-300">
                         </div>
                     `;
                 }
@@ -8457,7 +8671,9 @@
             const post = posts.find(p => p.id === postId);
             if (!post) return;
 
-            const newMsg = prompt(`Modificar mensaje de la publicación de ${post.name}:`, post.message);
+            const newMsg = await window.ncvPrompt(`Publicación de ${post.name}.`, {
+                title: 'Editar publicación', defaultValue: post.message, confirmLabel: 'Guardar cambios'
+            });
             if (newMsg === null) return;
 
             const clean = window.sanitizeUtils.sanitizeUserText(newMsg, 2000);
@@ -8477,7 +8693,10 @@
             const post = posts.find(p => p.id === postId);
             if (!post) return;
 
-            if (!confirm(`¿Estás segura de eliminar la publicación de ${post.name}?`)) return;
+            const confirmed = await window.ncvConfirm(`Se eliminará la publicación de ${post.name} del muro.`, {
+                title: 'Eliminar publicación', confirmLabel: 'Sí, eliminar'
+            });
+            if (!confirmed) return;
 
             await moderateContent('community_posts', postId, {
                 remove: true,
@@ -8490,7 +8709,9 @@
             const review = reviews.find(r => r.id === reviewId);
             if (!review) return;
 
-            const newComment = prompt(`Modificar texto de la reseña de ${review.name}:`, review.comment);
+            const newComment = await window.ncvPrompt(`Reseña de ${review.name}.`, {
+                title: 'Editar reseña', defaultValue: review.comment, confirmLabel: 'Guardar cambios'
+            });
             if (newComment === null) return;
 
             const clean = window.sanitizeUtils.sanitizeUserText(newComment, 2000);
@@ -8510,7 +8731,10 @@
             const review = reviews.find(r => r.id === reviewId);
             if (!review) return;
 
-            if (!confirm(`¿Estás segura de eliminar la reseña de ${review.name}?`)) return;
+            const confirmed = await window.ncvConfirm(`Se eliminará la reseña de ${review.name} de la web.`, {
+                title: 'Eliminar reseña', confirmLabel: 'Sí, eliminar'
+            });
+            if (!confirmed) return;
 
             await moderateContent('reviews', reviewId, {
                 remove: true,
@@ -8668,7 +8892,7 @@
                 if (post.photoUrl) {
                     photoHtml = `
                         <div class="rounded-2xl overflow-hidden max-h-64 border border-brand-100 shadow-xs">
-                            <img src="${safeImageSrc(post.photoUrl)}" alt="Foto de ${escapeHtml(post.name)}" class="w-full h-48 object-cover hover:scale-105 transition-transform duration-300">
+                            <img loading="lazy" decoding="async" src="${safeImageSrc(post.photoUrl)}" alt="Foto de ${escapeHtml(post.name)}" class="w-full h-48 object-cover hover:scale-105 transition-transform duration-300">
                         </div>
                     `;
                 }
@@ -9069,14 +9293,14 @@
         <div class="bg-gray-900 border border-pink-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(236,72,153,0.15)] max-w-sm w-full relative transform scale-95 transition-transform duration-300"
             id="marketing-popup-modal">
             <!-- Botón Cerrar -->
-            <button onclick="closeMarketingPopup()"
+            <button onclick="closeMarketingPopup()" aria-label="Cerrar"
                 class="absolute top-3 right-3 w-8 h-8 flex items-center justify-center bg-black/50 text-gray-300 hover:text-white hover:bg-black/80 rounded-full transition-colors z-10 backdrop-blur-md">
                 <i class="fa-solid fa-xmark"></i>
             </button>
 
             <!-- Imagen -->
             <div class="aspect-[4/3] w-full relative bg-gray-950">
-                <img id="marketing-popup-img" src="" class="w-full h-full object-cover" alt="Promoción">
+                <img loading="lazy" decoding="async" id="marketing-popup-img" src="" class="w-full h-full object-cover" alt="Promoción">
                 <div class="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent"></div>
             </div>
 
@@ -9092,7 +9316,7 @@
                     <i class="fa-solid fa-calendar-check"></i>
                     ¡Agendar ahora!
                 </button>
-                <button onclick="closeMarketingPopup()"
+                <button onclick="closeMarketingPopup()" aria-label="Cerrar"
                     class="w-full mt-3 text-xs text-gray-400 hover:text-white font-bold transition-colors">
                     Quizás más tarde
                 </button>
