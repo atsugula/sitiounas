@@ -6,7 +6,7 @@
 
 import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { initializeFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import * as bookingSlots from "./booking-slots.js";
 import * as loyalty from "./loyalty.js";
 import * as sanitize from "./sanitize.js";
@@ -101,7 +101,18 @@ window.firebaseCanonicalConfig = CANONICAL_FIREBASE_CONFIG;
 try {
     const app = getApps().length ? getApp() : initializeApp(explicitFirebaseConfig);
     const auth = getAuth(app);
-    const db = getFirestore(app);
+    // `initializeFirestore` en vez de `getFirestore` por una razón concreta:
+    // el transporte por defecto de Firestore es un canal WebChannel de larga
+    // duración contra `firestore.googleapis.com`. Los bloqueadores de anuncios
+    // y bastantes proxies corporativos lo cortan (`ERR_BLOCKED_BY_CLIENT`), y
+    // entonces cada lectura muere con `code: 'unavailable'` aunque la red y las
+    // credenciales estén perfectas.
+    //
+    // `experimentalAutoDetectLongPolling` detecta ese caso y cae a long polling
+    // sobre peticiones normales, que el bloqueador no distingue del resto del
+    // tráfico. No afecta a la seguridad: mismas credenciales, mismas Rules,
+    // mismos datos; solo cambia cómo viajan.
+    const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 
     window.dbInstance = db;
     window.authInstance = auth;
@@ -147,8 +158,37 @@ try {
         if (typeof window.unsubscribeAppointments === 'function') window.unsubscribeAppointments();
     }
 
+    // La sesión anónima solo debe crearse cuando NO hay nadie autenticado.
+    //
+    // Antes se llamaba a `signInAnonymously()` al cargar el módulo, sin
+    // condición. `signInAnonymously()` no respeta al usuario actual: si había
+    // una clienta con sesión persistida, la sustituía por un anónimo nuevo. El
+    // resultado era que recargar la página deslogueaba a la clienta.
+    //
+    // Ahora se decide dentro de `onAuthStateChanged`, que es el único momento
+    // en el que Firebase ya ha restaurado la sesión guardada y `user` es un
+    // dato fiable y no un estado intermedio.
+    let anonymousSignInInFlight = false;
+
+    function ensureAnonymousSession(user) {
+        if (user || anonymousSignInInFlight) return;
+        anonymousSignInInFlight = true;
+        signInAnonymously(auth)
+            .then(() => {
+                console.log('Firebase Auth listo y conectado a:', explicitFirebaseConfig.projectId);
+            })
+            .catch(() => {
+                console.warn('No pudimos abrir la sesión anónima del sitio público.');
+            })
+            .finally(() => {
+                anonymousSignInInFlight = false;
+            });
+    }
+
     onAuthStateChanged(auth, async (user) => {
         window.currentFirebaseUser = user || null;
+
+        ensureAnonymousSession(user);
 
         if (!user || user.isAnonymous) {
             clearAdminSessionMemory();
@@ -198,12 +238,6 @@ try {
         if (typeof window.renderCommunityFeed === 'function') window.renderCommunityFeed();
         if (typeof window.renderReviewsList === 'function') window.renderReviewsList();
         if (typeof window.renderGalleryPortfolio === 'function') window.renderGalleryPortfolio();
-    });
-
-    signInAnonymously(auth).then(() => {
-        console.log("Firebase Auth listo y conectado a:", explicitFirebaseConfig.projectId);
-    }).catch((err) => {
-        console.warn("Firebase Auth fallback activado.");
     });
 
     // ── Disponibilidad pública: bookingSlots ────────────────────
@@ -440,6 +474,15 @@ try {
 // Se exponen aquí, en un solo sitio, para que quede claro qué depende de qué.
 import * as timeUtils from "./time.js";
 import * as availability from "./availability.js";
+
+// Sello de build. Sirve para descartar en un segundo que el navegador esté
+// sirviendo una copia cacheada o una carpeta distinta del repositorio: basta
+// con comparar `window.RAMOS_BUILD.commit` con `git rev-parse --short HEAD`.
+window.RAMOS_BUILD = {
+    commit: '144dfe6+login-fix',
+    loginDebug: 'v3',
+    firestoreTransport: 'autoDetectLongPolling'
+};
 
 window.timeUtils = timeUtils;
 window.availabilityUtils = availability;

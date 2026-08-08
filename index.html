@@ -6475,7 +6475,7 @@
                     return 'Tu cuenta no tiene permiso para leer su propio perfil. Avísanos: es un problema de configuración, no tuyo.';
                 case 'unavailable':
                 case 'deadline-exceeded':
-                    return 'No pudimos conectar con la base de datos. Revisa tu conexión y desactiva bloqueadores de anuncios para este sitio.';
+                    return 'Entraste correctamente, pero no pudimos cargar tu perfil: algo está bloqueando la conexión con la base de datos. Desactiva el bloqueador de anuncios para este sitio y recarga. Tu sesión sigue abierta.';
                 default:
                     return 'No pudimos cargar tu perfil de cliente. Intenta de nuevo en un momento.';
             }
@@ -6677,6 +6677,37 @@
             return branch;
         }
 
+        /**
+         * Lee `users/{uid}` con reintentos ante fallos transitorios.
+         *
+         * Cuando un bloqueador corta el canal de Firestore, la primera lectura
+         * puede morir con `unavailable` y la siguiente funcionar, porque el SDK
+         * cambia de transporte. Un único intento convertía ese parpadeo en un
+         * cierre de sesión.
+         *
+         * `permission-denied` no se reintenta: es una respuesta definitiva del
+         * servidor, no un problema de red.
+         */
+        async function readClientProfileWithRetry(uid, intentos = 3) {
+            const { doc, getDoc } = window.firestoreUtils;
+            let ultimoError = null;
+
+            for (let intento = 1; intento <= intentos; intento++) {
+                try {
+                    return { ok: true, snap: await getDoc(doc(window.dbInstance, 'users', uid)) };
+                } catch (error) {
+                    ultimoError = error;
+                    console.warn(`[LOGIN] lectura de perfil fallida (intento ${intento}/${intentos}):`, error?.code || 'sin-codigo');
+                    if (error?.code === 'permission-denied') break;
+                    if (intento < intentos) {
+                        await new Promise((resolve) => setTimeout(resolve, 400 * intento));
+                    }
+                }
+            }
+
+            return { ok: false, error: ultimoError };
+        }
+
         window.handleUserLogin = async function (event) {
             event.preventDefault();
             const identifier = document.getElementById('login-identifier').value.trim().replace(/\s+/g, '');
@@ -6731,35 +6762,57 @@
             }
 
             let firestoreProfile = null;
-            try {
-                const { doc, getDoc } = window.firestoreUtils;
-                const docRef = doc(window.dbInstance, 'users', authUser.uid);
-                const docSnap = await getDoc(docRef);
+            const lectura = await readClientProfileWithRetry(authUser.uid);
 
-                if (!docSnap.exists()) {
-                    // Auth válido pero sin documento de perfil. No se
-                    // reconstruye: name, phone y birthdate solo existirían en
-                    // el navegador, y el navegador no es autoridad sobre el
-                    // perfil. Se dice exactamente qué pasa en vez de cerrar
-                    // sesión sin explicación.
-                    traceLoginOutcome('LOGIN_PROFILE_NOT_FOUND', { uidLen: authUser.uid.length });
-                    showToast("Tu perfil de Ramos Nails no está configurado correctamente. Escríbenos para completarlo.", "error");
+            if (!lectura.ok) {
+                const code = lectura.error?.code || 'sin-codigo';
+
+                // Un fallo transitorio de red NO puede costarle la sesión a la
+                // clienta. Este era el bug: el `catch` cerraba sesión ante
+                // cualquier error, incluido `unavailable`, que es lo que
+                // devuelve Firestore cuando un bloqueador corta su canal. Auth
+                // había aceptado el login y aun así la echábamos.
+                //
+                // Solo `permission-denied` justifica cerrar: significa que no
+                // podemos comprobar el rol, y sin eso no hay sesión segura.
+                if (code === 'permission-denied') {
+                    traceLoginOutcome('LOGIN_PROFILE_READ_DENIED', { code });
+                    showToast(getProfileReadErrorMessage(lectura.error), "error");
                     if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                         await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                     }
                     return;
                 }
 
-                firestoreProfile = docSnap.data() || {};
-            } catch (cloudErr) {
-                // Sin el código de error, "no pudimos cargar tu perfil" tapaba
-                // por igual un problema de permisos, uno de red y un bloqueo
-                // del navegador. Se distinguen, sin imprimir datos personales.
-                traceLoginOutcome(
-                    cloudErr?.code === 'permission-denied' ? 'LOGIN_PROFILE_READ_DENIED' : 'LOGIN_PROFILE_READ_ERROR',
-                    { code: cloudErr?.code || 'sin-codigo' }
-                );
-                showToast(getProfileReadErrorMessage(cloudErr), "error");
+                traceLoginOutcome('LOGIN_PROFILE_READ_ERROR', { code, sesionConservada: true });
+                showToast(getProfileReadErrorMessage(lectura.error), "error");
+                return;
+            }
+
+            if (!lectura.snap.exists()) {
+                // Auth válido pero sin documento de perfil. No se reconstruye:
+                // name, phone y birthdate solo existirían en el navegador, y el
+                // navegador no es autoridad sobre el perfil. Se dice exactamente
+                // qué pasa en vez de cerrar sesión sin explicación.
+                traceLoginOutcome('LOGIN_PROFILE_NOT_FOUND', { uidLen: authUser.uid.length });
+                showToast("Tu perfil de Ramos Nails no está configurado correctamente. Escríbenos para completarlo.", "error");
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                return;
+            }
+
+            firestoreProfile = lectura.snap.data() || {};
+
+            // El documento se localiza por uid, pero se comprueba igualmente:
+            // si el id del documento y el campo `uid` no coinciden con la
+            // sesión, el perfil no es de quien acaba de entrar.
+            if (lectura.snap.id !== authUser.uid || (firestoreProfile.uid && firestoreProfile.uid !== authUser.uid)) {
+                traceLoginOutcome('LOGIN_UID_MISMATCH', {
+                    docIdCoincide: lectura.snap.id === authUser.uid,
+                    campoUidCoincide: firestoreProfile.uid === authUser.uid
+                });
+                showToast("Tu perfil no coincide con tu cuenta. Escríbenos para revisarlo.", "error");
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                 }
