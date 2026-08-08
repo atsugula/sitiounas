@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"
+    role="img" aria-label="Ramos Nails">
+    <title>Ramos Nails</title>
+
+    <!--
+        Monograma RN de Ramos Nails.
+
+        Marca tipográfica provisional: se resuelve con tipografía y un aro de
+        champagne, sin clipart. Está pensada para verse bien recortada en
+        círculo, que es como la usan la barra de navegación y el pie.
+
+        La tipografía es la misma serif del sitio (Playfair Display), con
+        Georgia y la serif del sistema como respaldo para cuando el SVG se
+        muestre fuera de la página, por ejemplo como favicon.
+
+        Sustituible por el logotipo definitivo cuando exista.
+    -->
+
+    <defs>
+        <linearGradient id="rn-field" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fdfaf7" />
+            <stop offset="100%" stop-color="#f6e9e6" />
+        </linearGradient>
+    </defs>
+
+    <circle cx="60" cy="60" r="60" fill="url(#rn-field)" />
+    <circle cx="60" cy="60" r="53.5" fill="none" stroke="#c9a86a" stroke-width="1.25" opacity="0.85" />
+
+    <text x="60" y="60" text-anchor="middle" dominant-baseline="central"
+        font-family="'Playfair Display', Georgia, 'Times New Roman', serif"
+        font-size="46" font-weight="600" letter-spacing="1.5" fill="#833243">RN</text>
+
+    <!-- Filete bajo el monograma, como en una tarjeta de visita. -->
+    <rect x="45" y="86" width="30" height="1.1" fill="#c9a86a" opacity="0.9" />
+</svg>

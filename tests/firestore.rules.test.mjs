@@ -1,4 +1,4 @@
-// Tests de Firestore Security Rules — NailsConVal (Fase 3)
+// Tests de Firestore Security Rules — Ramos Nails (Fase 3)
 //
 // Requisitos para ejecutarlos:
 //   1. Node 18+ (usa el runner integrado `node --test`).

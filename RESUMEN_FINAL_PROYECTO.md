@@ -1,4 +1,13 @@
-# NailsConVal — Resumen final del proyecto
+# Ramos Nails — Resumen final del proyecto
+
+> **Nota de marca.** El sitio se llama ahora **Ramos Nails**. Los documentos de
+> las Fases 1 a 12 conservan el nombre anterior, NailsConVal, porque describen
+> el estado del proyecto en el momento en que se escribieron. El detalle del
+> cambio de marca está en `CAMBIOS_REBRANDING_RAMOS_NAILS.md`.
+>
+> El identificador interno `salonId` sigue siendo `nails-con-val` a propósito,
+> igual que el projectId de Firebase: cambiarlos es una migración de datos, no
+> un rebranding.
 
 Endurecimiento del sitio existente desde el estado tras la Fase 2 hasta una
 versión lista para desplegar.

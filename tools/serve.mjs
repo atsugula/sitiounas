@@ -81,7 +81,7 @@ createServer(async (req, res) => {
     }
 }).listen(port, () => {
     const applied = Object.keys(securityHeaders);
-    console.log(`NailsConVal en http://localhost:${port}`);
+    console.log(`Ramos Nails en http://localhost:${port}`);
     console.log(applied.length
         ? `Cabeceras de seguridad activas: ${applied.join(', ')}`
         : 'Sin cabeceras de seguridad (no se pudo leer firebase.json)');

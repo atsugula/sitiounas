@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// NailsConVal — Reglas de seguridad de Cloud Firestore
+// Ramos Nails — Reglas de seguridad de Cloud Firestore
 // Fase 3: modelo de datos + minimo privilegio.
 //
 // IMPORTANTE SOBRE EL DESPLIEGUE

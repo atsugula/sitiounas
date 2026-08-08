@@ -6,48 +6,99 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Título de la pestaña -->
-    <title>NailsConVal | Salón de Uñas & Nail Art Elegante en Tuluá</title>
+    <title>Ramos Nails | Uñas, Diseño y Cuidado</title>
     <meta name="description"
-        content="Elegancia, frescura y perfección en tus manos. Agenda tu cita de manicura y pedicura en línea con Val en Tuluá.">
+        content="Ramos Nails: diseños de uñas, manicure y cuidado profesional con reserva de citas en línea.">
+
+    <link rel="icon" type="image/svg+xml" href="./assets/brand/ramos-nails-mark.svg">
+    <link rel="apple-touch-icon" href="./assets/brand/ramos-nails-mark.svg">
+    <meta name="theme-color" content="#833243">
 
     <!-- METADATOS PARA VISTA PREVIA EN REDES SOCIALES -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="NailsConVal | Salón de Uñas & Nail Art Elegante">
+    <meta property="og:site_name" content="Ramos Nails">
+    <meta property="og:title" content="Ramos Nails | Uñas, Diseño y Cuidado">
     <meta property="og:description"
-        content="Elegancia, frescura y perfección en tus manos. Agenda tu cita en línea, consulta tarifas de servicios y reserva tu cupo.">
-    <meta property="og:image"
-        content="./logo.jpg">
-    <meta property="og:image:width" content="960">
-    <meta property="og:image:height" content="960">
+        content="Ramos Nails: diseños de uñas, manicure y cuidado profesional con reserva de citas en línea.">
+    <!--
+        PENDIENTE: falta el og:image en mapa de bits. Facebook, WhatsApp y X no
+        renderizan SVG en las vistas previas, así que hasta que exista un JPG o
+        PNG de 1200x630 la tarjeta se mostrará sin imagen. Es preferible a
+        seguir enseñando el logotipo de la marca anterior.
+    -->
+    <meta property="og:image" content="./assets/brand/ramos-nails-logo.svg">
     <meta property="og:url" content="https://bit.ly/nailsconval">
 
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="NailsConVal | Salón de Uñas & Nail Art">
-    <meta name="twitter:description" content="Agenda tu cita de manicura y pedicura en línea con Val en Tuluá.">
+    <meta name="twitter:title" content="Ramos Nails | Uñas, Diseño y Cuidado">
+    <meta name="twitter:description"
+        content="Diseños de uñas, manicure y cuidado profesional con reserva de citas en línea.">
     <meta name="twitter:image"
-        content="./logo.jpg">
+        content="./assets/brand/ramos-nails-logo.svg">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        /*
+         * Paleta de Ramos Nails.
+         *
+         * El rebranding se hace aquí y no clase por clase: `brand-*` se usa en
+         * unas 440 clases y `purple`/`fuchsia`/`violet` en otras 100. Redefinir
+         * los tokens cambia el color de todo el sitio con un diff mínimo y sin
+         * tocar una sola línea de maquetación.
+         *
+         * `purple` y `violet` se reasignan a la misma familia vino que `brand`
+         * para que las clases heredadas de la marca anterior no desentonen;
+         * `fuchsia` pasa a ser el rosa empolvado.
+         *
+         * `amber`, `rose` y `emerald` se dejan intactos: en el panel tienen
+         * significado semántico (aviso, error, éxito), no de marca.
+         *
+         * Contraste comprobado: blanco sobre `brand-700` da 8.39:1 y sobre
+         * `brand-950` 17.09:1. Todos los pares de texto cumplen AA o mejor.
+         */
+        const ramosNailsWine = {
+            50: '#fdf8f7',
+            100: '#f9ebe9',
+            200: '#f2d6d5',
+            300: '#e3b3b5',
+            400: '#cf8b90',
+            500: '#b76370',
+            600: '#9c4657',
+            700: '#833243',
+            800: '#6b2739',
+            900: '#571f2f',
+            950: '#331019',
+        };
+
+        const ramosNailsBlush = {
+            50: '#fdf6f4',
+            100: '#fbe9e4',
+            200: '#f6d5cc',
+            300: '#eeb6a8',
+            400: '#e09383',
+            500: '#cd7160',
+            600: '#b25749',
+            700: '#93453b',
+            800: '#793a33',
+            900: '#65332e',
+            950: '#371815',
+        };
+
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        brand: {
-                            50: '#fbf7ff',
-                            100: '#f3e8ff',
-                            200: '#e9d5ff',
-                            300: '#d8b4fe',
-                            400: '#c084fc',
-                            500: '#a855f7',
-                            600: '#9333ea',
-                            700: '#7e22ce',
-                            800: '#6b21a8',
-                            900: '#581c87',
-                            950: '#3b0764',
-                        },
-                        violetDark: '#2e1065',
-                        goldAccent: '#eab308'
+                        brand: ramosNailsWine,
+                        purple: ramosNailsWine,
+                        violet: ramosNailsWine,
+                        fuchsia: ramosNailsBlush,
+                        ivory: '#fdfaf7',
+                        blush: '#f2d6d5',
+                        wine: '#833243',
+                        champagne: '#c9a86a',
+                        ink: '#2b2224',
+                        violetDark: '#2a0f18',
+                        goldAccent: '#c9a86a'
                     },
                     fontFamily: {
                         serif: ['Playfair Display', 'serif'],
@@ -66,38 +117,79 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <style>
+        /*
+         * Tokens de marca de Ramos Nails.
+         *
+         * Los mismos valores que la paleta de Tailwind, disponibles para el CSS
+         * escrito a mano de más abajo. Antes esos bloques repetían el morado en
+         * una treintena de literales hexadecimales sueltos.
+         */
+        :root {
+            --brand-ivory: #fdfaf7;
+            --brand-blush: #f2d6d5;
+            --brand-blush-soft: #f9ebe9;
+            --brand-rose: #cf8b90;
+            --brand-wine: #833243;
+            --brand-wine-mid: #6b2739;
+            --brand-wine-deep: #331019;
+            --brand-champagne: #c9a86a;
+            --brand-champagne-soft: #e2cfa6;
+            --brand-ink: #2b2224;
+        }
+
         .glass-card {
             background: rgba(255, 255, 255, 0.85);
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(216, 180, 254, 0.3);
+            border: 1px solid rgba(226, 207, 166, 0.35);
         }
 
+        /*
+         * Nombres heredados de la paleta anterior. Se conservan porque los usa
+         * el marcado; solo cambia el color que producen.
+         */
         .purple-gradient-bg {
-            background: linear-gradient(135deg, #3b0764 0%, #581c87 50%, #7e22ce 100%);
+            background: linear-gradient(135deg, var(--brand-wine-deep) 0%, var(--brand-wine-mid) 55%, var(--brand-wine) 100%);
         }
 
         .soft-purple-bg {
-            background: linear-gradient(180deg, #fbf7ff 0%, #f3e8ff 100%);
+            background: linear-gradient(180deg, var(--brand-ivory) 0%, var(--brand-blush-soft) 100%);
+        }
+
+        /*
+         * Imagen principal.
+         *
+         * Se declaran dos capas: primero el asset local definitivo y debajo la
+         * fotografía remota actual. Mientras el archivo local no exista, su capa
+         * simplemente no pinta y se ve la de abajo, así que el hero nunca queda
+         * vacío. Al añadir el asset, pasa a mandar sin tocar el marcado.
+         */
+        .hero-backdrop {
+            background-image:
+                url('./assets/brand/ramos-nails-hero.webp'),
+                url('https://images.unsplash.com/photo-1604654894610-df63bc536371?q=80&w=1920&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
         }
 
         .calendar-day:hover:not(.disabled) {
-            background-color: #c084fc;
+            background-color: var(--brand-rose);
             color: white;
             cursor: pointer;
         }
 
         .calendar-day.selected {
-            background-color: #7e22ce !important;
+            background-color: var(--brand-wine) !important;
             color: white !important;
             font-weight: bold;
-            box-shadow: 0 4px 12px rgba(126, 34, 206, 0.4);
+            box-shadow: 0 4px 12px rgba(131, 50, 67, 0.4);
         }
 
         .time-slot.selected {
-            background-color: #7e22ce !important;
+            background-color: var(--brand-wine) !important;
             color: white !important;
-            border-color: #a855f7 !important;
-            box-shadow: 0 4px 12px rgba(126, 34, 206, 0.4);
+            border-color: var(--brand-rose) !important;
+            box-shadow: 0 4px 12px rgba(131, 50, 67, 0.4);
         }
 
         .time-slot.unavailable {
@@ -126,14 +218,14 @@
         }
 
         .ncv-loyalty-banner {
-            background: linear-gradient(135deg, #3b0764 0%, #6b21a8 55%, #eab308 100%);
+            background: linear-gradient(135deg, var(--brand-wine-deep) 0%, var(--brand-wine) 55%, var(--brand-champagne) 100%);
         }
 
         .ncv-stamp {
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            border: 2px dashed rgba(234, 179, 8, 0.5);
+            border: 2px dashed rgba(201, 168, 106, 0.55);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -141,31 +233,31 @@
         }
 
         .ncv-stamp.filled {
-            background: linear-gradient(135deg, #eab308, #f59e0b);
-            border-color: #fbbf24;
-            box-shadow: 0 2px 8px rgba(234, 179, 8, 0.45);
+            background: linear-gradient(135deg, var(--brand-champagne-soft), var(--brand-champagne));
+            border-color: var(--brand-champagne-soft);
+            box-shadow: 0 2px 8px rgba(201, 168, 106, 0.45);
         }
 
         .ncv-input {
             width: 100%;
-            background: #f5f3ff;
-            border: 1.5px solid #e9d5ff;
+            background: var(--brand-ivory);
+            border: 1.5px solid var(--brand-blush);
             border-radius: 12px;
             padding: 10px 14px;
             font-size: 14px;
-            color: #1e1b4b;
+            color: var(--brand-ink);
             outline: none;
             transition: border-color .2s, box-shadow .2s;
         }
 
         .ncv-input:focus {
-            border-color: #a855f7;
-            box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+            border-color: var(--brand-wine);
+            box-shadow: 0 0 0 3px rgba(131, 50, 67, 0.15);
         }
 
         .ncv-tab-active {
-            color: #7e22ce;
-            border-bottom: 2.5px solid #7e22ce;
+            color: var(--brand-wine);
+            border-bottom: 2.5px solid var(--brand-wine);
         }
 
         .ncv-tab-inactive {
@@ -176,7 +268,7 @@
         .ncv-btn-primary {
             width: 100%;
             padding: 13px;
-            background: linear-gradient(135deg, #7e22ce, #a855f7);
+            background: linear-gradient(135deg, var(--brand-wine), var(--brand-wine-mid));
             color: #fff;
             font-weight: 800;
             font-size: 14px;
@@ -227,12 +319,12 @@
             width: 48px;
             height: 48px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #7e22ce, #a855f7);
+            background: linear-gradient(135deg, var(--brand-wine), var(--brand-wine-mid));
             color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 8px 24px rgba(126, 34, 206, 0.35);
+            box-shadow: 0 8px 24px rgba(131, 50, 67, 0.35);
             cursor: pointer;
             border: none;
             opacity: 0;
@@ -275,11 +367,11 @@
             align-items: center;
             gap: 12px;
             background: #fff;
-            border: 1px solid #e9d5ff;
+            border: 1px solid var(--brand-blush);
             border-radius: 16px;
             padding: 12px 16px;
             margin-top: 16px;
-            box-shadow: 0 4px 16px rgba(126, 34, 206, 0.08);
+            box-shadow: 0 4px 16px rgba(131, 50, 67, 0.08);
         }
 
         @media (min-width: 640px) {
@@ -328,12 +420,12 @@
                 <a href="#" class="flex items-center gap-3 group">
                     <div
                         class="w-11 h-11 rounded-full ring-2 ring-brand-400/80 p-0.5 shadow-md shadow-brand-500/20 group-hover:scale-105 transition-all shrink-0 bg-gradient-to-tr from-brand-600 to-purple-400">
-                        <img loading="lazy" decoding="async" src="./logo.jpg"
-                            alt="NailsConVal Logo" class="w-full h-full object-cover object-top rounded-full">
+                        <img decoding="async" src="./assets/brand/ramos-nails-mark.svg"
+                            alt="Ramos Nails" class="w-full h-full object-cover rounded-full bg-white">
                     </div>
                     <div>
                         <span
-                            class="font-serif text-2xl font-bold tracking-tight text-brand-950 block leading-none group-hover:text-brand-700 transition-colors">NailsConVal</span>
+                            class="font-serif text-2xl font-bold tracking-tight text-brand-950 block leading-none group-hover:text-brand-700 transition-colors">Ramos Nails</span>
                         <span
                             class="text-[9px] tracking-[0.2em] text-brand-600 uppercase font-extrabold block mt-1">Estudio
                             & Nail Art</span>
@@ -485,9 +577,8 @@
 
     <section id="inicio" class="relative min-h-[88vh] flex items-center justify-center overflow-hidden py-16 lg:py-24">
         <div class="absolute inset-0 purple-gradient-bg opacity-95"></div>
-        <div
-            class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1604654894610-df63bc536371?q=80&w=1920&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay opacity-30">
-        </div>
+        <!-- Fondo decorativo; el texto del hero va aparte y sigue siendo legible. -->
+        <div class="absolute inset-0 hero-backdrop mix-blend-overlay opacity-30" role="presentation"></div>
 
         <div class="absolute top-1/4 left-10 w-72 h-72 bg-brand-400/20 rounded-full blur-3xl pointer-events-none"></div>
         <div class="absolute bottom-10 right-10 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none">
@@ -749,7 +840,7 @@
                                         <i class="fa-solid fa-user-check"></i>
                                     </div>
                                     <div class="overflow-hidden leading-tight">
-                                        <p class="text-xs font-bold text-white truncate">Nails Con Val</p>
+                                        <p class="text-xs font-bold text-white truncate">Ramos Nails</p>
                                         <p class="text-[11px] text-gray-400 truncate">Valentina Villada Restrepo</p>
                                     </div>
                                 </div>
@@ -1036,8 +1127,13 @@
                             class="absolute -inset-4 rounded-3xl bg-gradient-to-tr from-brand-600 to-brand-300 opacity-30 blur-lg">
                         </div>
                         <div class="relative rounded-3xl overflow-hidden border-4 border-white shadow-2xl aspect-[4/5]">
-                            <img loading="lazy" decoding="async" src="./logo.jpg"
-                                alt="Valeria - Creadora de NailsConVal" class="w-full h-full object-cover object-top">
+                            <!--
+                                Aquí iría el retrato de la fundadora. Hasta que
+                                exista, se muestra la marca en vez de una foto
+                                de banco que no corresponde a nadie del estudio.
+                            -->
+                            <img decoding="async" src="./assets/brand/ramos-nails-logo.svg"
+                                alt="Ramos Nails" class="w-full h-full object-contain p-8 bg-brand-50">
                         </div>
                     </div>
                 </div>
@@ -1061,7 +1157,7 @@
 
                     <p class="text-gray-600 text-base sm:text-lg leading-relaxed mb-6">
                         Apasionada por el cuidado de las uñas y la estética de las manos. Creé <strong
-                            class="text-brand-900 font-semibold">NailsConVal</strong> con la visión de ofrecer un
+                            class="text-brand-900 font-semibold">Ramos Nails</strong> con la visión de ofrecer un
                         espacio íntimo, elegante y relajante donde cada clienta reciba una atención verdaderamente
                         personalizada.
                     </p>
@@ -1112,7 +1208,7 @@
                 </div>
                 <h2 class="font-serif text-3xl sm:text-5xl font-bold text-brand-950 mb-4">Muro de la Comunidad</h2>
                 <p class="text-gray-600 text-base sm:text-lg">Comparte tus opiniones, publica imágenes .jpg de tus ideas
-                    o resultados de uñas e interactúa con la comunidad de NailsConVal.</p>
+                    o resultados de uñas e interactúa con la comunidad de Ramos Nails.</p>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -1136,7 +1232,7 @@
                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Tu Mensaje u
                                 Opinión</label>
                             <textarea id="comm-message" required rows="3"
-                                placeholder="¿Qué diseño tienes en mente? ¿Cómo fue tu experiencia en NailsConVal?..."
+                                placeholder="¿Qué diseño tienes en mente? ¿Cómo fue tu experiencia en Ramos Nails?..."
                                 class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
                         </div>
 
@@ -1208,7 +1304,7 @@
                     Comunidad</span>
                 <h2 class="font-serif text-3xl sm:text-5xl font-bold text-brand-950 mb-4">Lo que dicen mis Clientas</h2>
                 <p class="text-gray-600 text-base">Lee los comentarios reales y comparte tu propia experiencia en
-                    NailsConVal con fotos de tus uñas.</p>
+                    Ramos Nails con fotos de tus uñas.</p>
             </div>
 
             <div id="reviews-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
@@ -1480,13 +1576,13 @@
             <div class="flex flex-col sm:flex-row justify-between items-center gap-6 pb-8 border-b border-white/10">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full ring-2 ring-brand-400 overflow-hidden shrink-0">
-                        <img loading="lazy" decoding="async" src="./logo.jpg"
-                            alt="NailsConVal" class="w-full h-full object-cover object-top">
+                        <img decoding="async" src="./assets/brand/ramos-nails-mark.svg"
+                            alt="Ramos Nails" class="w-full h-full object-cover bg-white">
                     </div>
-                    <span class="font-serif text-2xl font-bold tracking-tight">NailsConVal</span>
+                    <span class="font-serif text-2xl font-bold tracking-tight">Ramos Nails</span>
                 </div>
                 <div class="flex items-center gap-4 text-xs text-brand-200">
-                    <span>&copy; <span id="year"></span> NailsConVal. Todos los derechos reservados.</span>
+                    <span>&copy; <span id="year"></span> Ramos Nails. Todos los derechos reservados.</span>
                 </div>
             </div>
         </div>
@@ -1615,10 +1711,10 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════
-         POP-UP AUTH MODAL — NailsConVal Premium Sign-in & Register
+         POP-UP AUTH MODAL — Ramos Nails Premium Sign-in & Register
     ════════════════════════════════════════════════════════════════════ -->
     <div id="user-auth-modal" role="dialog" aria-modal="true" class="fixed inset-0 z-[999] hidden items-center justify-center p-4"
-        style="background:rgba(30,11,80,0.82);backdrop-filter:blur(8px);">
+        style="background:rgba(51,16,25,0.82);backdrop-filter:blur(8px);">
         <div class="ncv-auth-card bg-white rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden border border-purple-200"
             style="max-height:95vh;overflow-y:auto;">
 
@@ -1638,11 +1734,11 @@
                         class="bg-yellow-400 text-purple-950 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wide shadow-sm flex items-center gap-1">
                         <i id="loyalty-banner-icon" class="fa-solid fa-crown"></i> Club Fidelidad
                     </span>
-                    <span class="text-purple-200 text-[11px] font-semibold">NailsConVal</span>
+                    <span class="text-purple-200 text-[11px] font-semibold">Ramos Nails</span>
                 </div>
                 <!-- Headline -->
                 <h2 class="font-serif text-xl sm:text-2xl font-bold leading-snug mb-2">
-                    ✨ ¡Crea tu cuenta en NailsConVal y acumula sellos para tu descuento en la Cita&nbsp;<span
+                    ✨ ¡Crea tu cuenta en Ramos Nails y acumula sellos para tu descuento en la Cita&nbsp;<span
                         class="text-yellow-300">#11!</span>
                 </h2>
                 <p class="text-purple-200 text-xs leading-relaxed mb-4">
@@ -1661,7 +1757,7 @@
                     <div class="ncv-stamp"><i class="fa-regular fa-circle text-yellow-400/40 text-[11px]"></i></div>
                     <div class="ncv-stamp"><i class="fa-regular fa-circle text-yellow-400/40 text-[11px]"></i></div>
                     <div class="ncv-stamp"><i class="fa-regular fa-circle text-yellow-400/40 text-[11px]"></i></div>
-                    <div class="ncv-stamp" style="border-color:#eab308;">
+                    <div class="ncv-stamp" style="border-color:var(--brand-champagne);">
                         <span class="text-yellow-300 font-black text-[10px]">🎁</span>
                     </div>
                     <span class="text-[10px] text-yellow-300 font-bold ml-1">= Descuento #11</span>
@@ -1894,7 +1990,7 @@
             <form onsubmit="withBusyForm(this, event, handleAdminAuthSubmit, 'Verificando…')" class="space-y-4 text-left">
                 <div>
                     <label class="block text-xs font-bold text-amber-300 uppercase mb-1">Correo Administradora</label>
-                    <input type="email" id="admin-email-input" required placeholder="admin@nailsconval.com"
+                    <input type="email" id="admin-email-input" required placeholder="correo@ejemplo.com"
                         class="w-full bg-brand-900/90 border border-amber-400/40 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
                 </div>
                 <div>
@@ -2022,7 +2118,7 @@
                 <img loading="lazy" decoding="async" id="lightbox-img" src="" alt="Foto Galería" class="max-h-[65vh] w-auto object-contain p-4">
                 <div class="p-5 text-center text-white bg-gray-900 w-full border-t border-gray-800">
                     <span id="lightbox-counter"
-                        class="text-xs text-brand-300 font-bold block uppercase tracking-wider mb-1">NailsConVal</span>
+                        class="text-xs text-brand-300 font-bold block uppercase tracking-wider mb-1">Ramos Nails</span>
                     <p id="lightbox-caption" class="text-base font-bold text-gray-100 max-w-xl mx-auto leading-relaxed">
                     </p>
                 </div>
@@ -2103,7 +2199,7 @@
                 </div>
                 <div>
                     <h2 class="font-serif font-bold text-lg text-white flex items-center gap-2">
-                        <span>Panel Administradora Val</span>
+                        <span>Panel Administrativo — Ramos Nails</span>
                         <span
                             class="text-[10px] bg-amber-400/20 text-amber-300 font-extrabold px-2 py-0.5 rounded-md border border-amber-400/30">/admin</span>
                     </h2>
@@ -2487,7 +2583,14 @@
                                             <select id="admin-ticket-theme-select"
                                                 onchange="if(typeof updateDiscountPreview === 'function') updateDiscountPreview()"
                                                 class="w-full bg-gray-950 border border-gray-600 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-400 text-white cursor-pointer">
-                                                <option value="purple">💜 Estándar (Purple Glam)</option>
+                                                <!--
+                                                    El valor "purple" es el identificador guardado en
+                                                    settings/discount_settings.ticketTheme y no se toca:
+                                                    cambiarlo dejaría huérfana la configuración existente.
+                                                    Solo cambia la etiqueta, porque ese tema ahora pinta
+                                                    en vino, que es el color de Ramos Nails.
+                                                -->
+                                                <option value="purple">🍷 Estándar (Vino Ramos)</option>
                                                 <option value="rose">🌸 Rosa Clásico</option>
                                                 <option value="ruby">❤️ Rojo Intenso</option>
                                                 <option value="gold">👑 VIP Dorado</option>
@@ -2568,7 +2671,7 @@
                                                 <div class="ncv-stamp filled text-white w-6 h-6 sm:w-8 sm:h-8"><i
                                                         class="fa-solid fa-star text-[8px] sm:text-[11px]"></i></div>
                                                 <div class="ncv-stamp w-6 h-6 sm:w-8 sm:h-8"
-                                                    style="border-color:#eab308;"><span
+                                                    style="border-color:var(--brand-champagne);"><span
                                                         class="text-yellow-300 font-black text-[10px]">🎁</span></div>
                                             </div>
 
@@ -4231,7 +4334,7 @@
             const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
             const currentMonthName = monthNames[currentDate.getMonth()];
 
-            const msg = `¡Hola ${name}! En NailsconVal queremos desearte un muy feliz mes de cumpleaños 🎂. Para celebrarlo contigo, te regalamos un BONO DEL 50% DE DESCUENTO en tu próxima cita. Usa el código: FELIZCUMPLE50 al agendar. Válido hasta el ${lastDay} de ${currentMonthName}. ¡Que tengas un mes maravilloso y lleno de bendiciones! Te esperamos para consentirte.`;
+            const msg = `¡Hola ${name}! En Ramos Nails queremos desearte un muy feliz mes de cumpleaños 🎂. Para celebrarlo contigo, te regalamos un BONO DEL 50% DE DESCUENTO en tu próxima cita. Usa el código: FELIZCUMPLE50 al agendar. Válido hasta el ${lastDay} de ${currentMonthName}. ¡Que tengas un mes maravilloso y lleno de bendiciones! Te esperamos para consentirte.`;
 
             window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`, '_blank');
         };
@@ -5659,7 +5762,7 @@
                     <td class="px-6 py-4">${statusBadge}</td>
                     <td class="px-6 py-4 text-right">
                         <div class="flex items-center justify-end gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
-                            <a href="https://wa.me/${(app.phone || '').replace(/[^0-9]/g, '')}?text=Hola%20${encodeURIComponent(app.name || 'Cliente')},%20te%20escribo%20de%20NailsConVal" target="_blank" class="w-9 h-9 flex items-center justify-center bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-all shadow-sm border border-emerald-500/20 hover:scale-110" title="Contactar por WhatsApp">
+                            <a href="https://wa.me/${(app.phone || '').replace(/[^0-9]/g, '')}?text=Hola%20${encodeURIComponent(app.name || 'Cliente')},%20te%20escribo%20de%20Ramos%20Nails" target="_blank" class="w-9 h-9 flex items-center justify-center bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-all shadow-sm border border-emerald-500/20 hover:scale-110" title="Contactar por WhatsApp">
                                 <i class="fa-brands fa-whatsapp text-base"></i>
                             </a>
 
@@ -5984,7 +6087,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `Reporte_Financiero_NailsConVal_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.setAttribute("download", `Reporte_Financiero_RamosNails_${new Date().toISOString().slice(0, 10)}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -6007,7 +6110,7 @@
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
             link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `Reporte_Citas_NailsConVal_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.setAttribute("download", `Reporte_Citas_RamosNails_${new Date().toISOString().slice(0, 10)}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -6270,7 +6373,7 @@
                 4. 📅 <strong>Retoque:</strong> Agenda tu mantenimiento cada 21 a 25 días máximo.`;
             }
             else if (q.includes('ubicacion') || q.includes('ubicación') || q.includes('donde') || q.includes('dónde') || q.includes('direccion') || q.includes('dirección') || q.includes('tuluá') || q.includes('tulua')) {
-                return `📍 <strong>Ubicación del Estudio NailsConVal:</strong><br><br>
+                return `📍 <strong>Ubicación del Estudio Ramos Nails:</strong><br><br>
                 Nos encontramos en <strong>Carrera 40 #29-24 - Barrio Panamericano, Tuluá, Valle del Cauca</strong>.<br>
                 ✨ <em>Atención exclusivamente con reserva previa agendada en la web.</em>`;
             }
@@ -7200,7 +7303,7 @@
             const cleanPhone = '573192395653';
             const promoInfo = window.appliedPromoCode ? `\n🏷️ *Código Promocional Aplicado:* ${window.appliedPromoCode}` : '';
 
-            pendingWhatsAppMessage = `✨ *NUEVA RESERVA DE CITA NAILSCONVAL* ✨\n\n` +
+            pendingWhatsAppMessage = `✨ *NUEVA RESERVA DE CITA RAMOS NAILS* ✨\n\n` +
                 `👤 *Cliente:* ${name}\n` +
                 `📱 *Teléfono:* ${phone}\n` +
                 `💅 *Servicios (${selectedList.length}):* ${servicesSummaryText}\n` +
@@ -7402,7 +7505,7 @@
                     try {
                         const downloadLink = document.createElement('a');
                         downloadLink.href = bookingAttachedImage.src;
-                        downloadLink.download = bookingAttachedImage.fileName || 'Diseno_NailsConVal.png';
+                        downloadLink.download = bookingAttachedImage.fileName || 'Diseno_RamosNails.png';
                         document.body.appendChild(downloadLink);
                         downloadLink.click();
                         document.body.removeChild(downloadLink);
@@ -7787,7 +7890,7 @@
                     <div class="w-full h-full relative" onclick="openLightbox(${index})">
                         <img src="${safeImageSrc(item.url)}" alt="${escapeHtml(item.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                         <div class="absolute inset-0 bg-gradient-to-t from-brand-950/85 via-brand-950/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end text-white">
-                            <span class="text-xs text-brand-300 font-semibold">NailsConVal</span>
+                            <span class="text-xs text-brand-300 font-semibold">Ramos Nails</span>
                             <h4 class="text-sm font-bold">${escapeHtml(item.title)}</h4>
                         </div>
                     </div>
@@ -7988,7 +8091,7 @@
 
             if (img) img.src = cleanImageUrl(current.url);
             if (caption) caption.textContent = current.title;
-            if (counter) counter.textContent = `Galería NailsConVal (${currentGalleryIndex + 1} de ${GALLERY_ITEMS_DATA.length})`;
+            if (counter) counter.textContent = `Galería Ramos Nails (${currentGalleryIndex + 1} de ${GALLERY_ITEMS_DATA.length})`;
         }
 
         let reviewPhotoBase64 = null;

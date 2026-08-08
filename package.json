@@ -1,8 +1,8 @@
 {
-  "name": "nailsconval",
+  "name": "ramos-nails",
   "version": "1.0.0",
   "private": true,
-  "description": "Sitio NailsConVal - HTML/CSS/JS vanilla sobre Firebase Auth + Cloud Firestore",
+  "description": "Sitio Ramos Nails - HTML/CSS/JS vanilla sobre Firebase Auth + Cloud Firestore",
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
