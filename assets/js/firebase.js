@@ -18,17 +18,12 @@ window.bookingSlotUtils = bookingSlots;
 window.loyaltyUtils = loyalty;
 window.sanitizeUtils = sanitize;
 
-const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
-
-// Proyecto Firebase de Ramos Nails. Estos valores son públicos por diseño en
-// Firebase Web: `apiKey` identifica al proyecto, no autoriza nada. Lo que
-// protege los datos son las Rules, no esta clave.
+// Proyecto Firebase de Ramos Nails. Esta es LA autoridad: cualquier otra fuente
+// de configuración se valida contra ella.
 //
-// `ncv_firebase_config` en localStorage sigue teniendo prioridad para poder
-// apuntar a otro proyecto en pruebas sin tocar el código. Ojo: un navegador
-// que conserve la config del proyecto anterior seguirá usándola hasta que se
-// limpie esa clave.
-const explicitFirebaseConfig = savedFbConfig || {
+// Estos valores son públicos por diseño en Firebase Web: `apiKey` identifica al
+// proyecto, no autoriza nada. Lo que protege los datos son las Rules.
+export const CANONICAL_FIREBASE_CONFIG = {
     apiKey: "AIzaSyC5LskLSBP7BaeqqxbKb697Tv4zSTCOLWw",
     authDomain: "ramos-nails.firebaseapp.com",
     projectId: "ramos-nails",
@@ -37,6 +32,71 @@ const explicitFirebaseConfig = savedFbConfig || {
     appId: "1:653901900568:web:69e74cf542c73d79d18c6d",
     measurementId: "G-7KJ8YPJ511"
 };
+
+const FIREBASE_CONFIG_KEY = 'ncv_firebase_config';
+
+/**
+ * Configuración de arranque, con `ncv_firebase_config` como override acotado.
+ *
+ * El override existe para poder rotar credenciales del MISMO proyecto desde el
+ * panel sin tocar el código. Lo que no puede hacer es cambiar de proyecto: un
+ * navegador que guardó esa clave cuando el sitio apuntaba a otro sitio seguiría
+ * conectándose allí para siempre, en silencio, leyendo y escribiendo datos de
+ * clientas en una base que ya no es la del salón.
+ *
+ * Por eso el `projectId` no es negociable: si no es el canónico, la entrada se
+ * borra del navegador y se arranca con la configuración del código.
+ */
+function resolveFirebaseConfig() {
+    let raw = null;
+
+    try {
+        raw = localStorage.getItem(FIREBASE_CONFIG_KEY);
+    } catch (err) {
+        // localStorage inaccesible (modo privado): no hay override posible.
+        return { ...CANONICAL_FIREBASE_CONFIG };
+    }
+
+    if (raw === null) return { ...CANONICAL_FIREBASE_CONFIG };
+
+    // Se purga sobre `raw`, no sobre el resultado de JSON.parse: una entrada
+    // corrupta también hay que borrarla, o se queda ahí para siempre.
+    const purge = (reason) => {
+        try {
+            localStorage.removeItem(FIREBASE_CONFIG_KEY);
+        } catch (err) {
+            // Nada que hacer si el navegador no deja escribir.
+        }
+        console.warn(`[firebase] ${FIREBASE_CONFIG_KEY} descartado: ${reason}. Se usa la configuración de ${CANONICAL_FIREBASE_CONFIG.projectId}.`);
+    };
+
+    let saved = null;
+    try {
+        saved = JSON.parse(raw);
+    } catch (err) {
+        saved = null;
+    }
+
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+        purge('no es un objeto de configuración válido');
+        return { ...CANONICAL_FIREBASE_CONFIG };
+    }
+
+    if (saved.projectId !== CANONICAL_FIREBASE_CONFIG.projectId) {
+        purge(`projectId "${saved.projectId}" no es "${CANONICAL_FIREBASE_CONFIG.projectId}"`);
+        return { ...CANONICAL_FIREBASE_CONFIG };
+    }
+
+    // Mismo proyecto: se acepta, pero sobre la base canónica, para que un
+    // override incompleto no deje campos sin definir.
+    return { ...CANONICAL_FIREBASE_CONFIG, ...saved, projectId: CANONICAL_FIREBASE_CONFIG.projectId };
+}
+
+const explicitFirebaseConfig = resolveFirebaseConfig();
+
+// El script clásico de index.html no puede importar este módulo, y necesita
+// saber cuál es el proyecto legítimo para no ofrecer guardar otro.
+window.firebaseCanonicalConfig = CANONICAL_FIREBASE_CONFIG;
 
 try {
     const app = getApps().length ? getApp() : initializeApp(explicitFirebaseConfig);

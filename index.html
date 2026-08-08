@@ -6227,13 +6227,24 @@
                 return;
             }
 
+            // Este formulario sirve para rotar credenciales del proyecto del
+            // salón, no para saltar a otro proyecto. Guardar un projectId
+            // ajeno dejaría a este navegador leyendo y escribiendo citas en
+            // una base que no es la nuestra, así que se rechaza aquí en vez de
+            // guardarlo y que el arranque lo descarte en silencio.
+            const canonical = window.firebaseCanonicalConfig;
+            if (canonical && projectId !== canonical.projectId) {
+                showToast(`El Project ID debe ser "${canonical.projectId}". No se guardó nada.`, "error");
+                return;
+            }
+
             const newConfig = {
                 apiKey: apiKey,
                 authDomain: authDomain || `${projectId}.firebaseapp.com`,
                 projectId: projectId,
                 storageBucket: `${projectId}.firebasestorage.app`,
-                messagingSenderId: "1010450777173",
-                appId: appId || "1:1010450777173:web:custom"
+                messagingSenderId: canonical ? canonical.messagingSenderId : "653901900568",
+                appId: appId || (canonical ? canonical.appId : "1:653901900568:web:69e74cf542c73d79d18c6d")
             };
 
             localStorage.setItem('ncv_firebase_config', JSON.stringify(newConfig));
