@@ -4,6 +4,13 @@ Fecha: 2026-08-08
 Rama: `mejora-v2`
 Marca visible: **Ramos Nails** · `projectId`: `nailsconval` · `salonId`: `nails-con-val`
 
+> ⚠️ **SUPERSEDIDO EN PARTE.** Después de escribir este cierre, el salón creó su
+> propio proyecto Firebase: el `projectId` pasó a **`ramos-nails`**. Este
+> documento se conserva como registro histórico; **donde diga `nailsconval`,
+> léase `ramos-nails`** (incluidos los comandos `--project=` de la última
+> sección). Ver `CAMBIOS_CONEXION_FIREBASE_RAMOS_NAILS.md`.
+> El `salonId` sigue siendo `nails-con-val`.
+
 ---
 
 ## Veredicto

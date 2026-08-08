@@ -61,7 +61,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Invariantes del proyecto. No son configurables a propósito: cambiar
 // cualquiera de las dos convierte esta herramienta en otra cosa.
 const SALON_ID = DEFAULT_SALON_ID; // 'nails-con-val'
-const EXPECTED_PROJECT_ID = 'nailsconval';
+const EXPECTED_PROJECT_ID = 'ramos-nails';
 
 const ACTIVE_STATUSES = ['confirmada', 'pendiente'];
 

@@ -32,7 +32,7 @@ import {
 } from 'firebase/firestore';
 
 const SALON = 'nails-con-val';
-const PROJECT_ID = 'nailsconval-rules-test';
+const PROJECT_ID = 'ramos-nails-rules-test';
 // Mismo formato determinista que produce assets/js/booking-slots.js
 const SLOT_ID = `${SALON}_2026-09-01_14:00`;
 

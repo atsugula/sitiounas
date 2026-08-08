@@ -20,14 +20,22 @@ window.sanitizeUtils = sanitize;
 
 const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
 
+// Proyecto Firebase de Ramos Nails. Estos valores son públicos por diseño en
+// Firebase Web: `apiKey` identifica al proyecto, no autoriza nada. Lo que
+// protege los datos son las Rules, no esta clave.
+//
+// `ncv_firebase_config` en localStorage sigue teniendo prioridad para poder
+// apuntar a otro proyecto en pruebas sin tocar el código. Ojo: un navegador
+// que conserve la config del proyecto anterior seguirá usándola hasta que se
+// limpie esa clave.
 const explicitFirebaseConfig = savedFbConfig || {
-    apiKey: "AIzaSyCoJ_QxB2LIclmVU9cnt3idEWcvdlX_hzw",
-    authDomain: "nailsconval.firebaseapp.com",
-    projectId: "nailsconval",
-    storageBucket: "nailsconval.firebasestorage.app",
-    messagingSenderId: "1010450777173",
-    appId: "1:1010450777173:web:7b3c77b9b9bb2d715f00dc",
-    measurementId: "G-TE5Y3G24E8"
+    apiKey: "AIzaSyC5LskLSBP7BaeqqxbKb697Tv4zSTCOLWw",
+    authDomain: "ramos-nails.firebaseapp.com",
+    projectId: "ramos-nails",
+    storageBucket: "ramos-nails.firebasestorage.app",
+    messagingSenderId: "653901900568",
+    appId: "1:653901900568:web:69e74cf542c73d79d18c6d",
+    measurementId: "G-7KJ8YPJ511"
 };
 
 try {
