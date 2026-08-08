@@ -6658,23 +6658,45 @@
             if (phoneInput) phoneInput.value = phone;
         };
 
+        /**
+         * Traza de la rama que tomó el login de clienta.
+         *
+         * El login podía terminar en `signOut()` por cinco motivos distintos y
+         * todos se parecían desde fuera: la clienta veía "no pudimos cargar tu
+         * perfil" tanto si le faltaba el documento como si la red se había
+         * caído. Diagnosticarlo obligaba a adivinar.
+         *
+         * Cada salida deja aquí un código estable. Nunca lleva contraseña,
+         * token ni el correo completo: solo lo justo para saber qué pasó.
+         */
+        window.lastLoginOutcome = null;
+
+        function traceLoginOutcome(branch, detail = {}) {
+            window.lastLoginOutcome = { branch, at: new Date().toISOString(), ...detail };
+            console.log(`[LOGIN] ${branch}`, detail);
+            return branch;
+        }
+
         window.handleUserLogin = async function (event) {
             event.preventDefault();
             const identifier = document.getElementById('login-identifier').value.trim().replace(/\s+/g, '');
             const password = document.getElementById('login-password').value.trim();
 
             if (!identifier || !password) {
+                traceLoginOutcome('LOGIN_INPUT_INCOMPLETE');
                 showToast("Ingresa tu correo y contraseña.", "error");
                 return;
             }
 
             if (!window.authInstance || !window.firebaseAuthUtils || !window.firebaseAuthUtils.signInWithEmailAndPassword) {
+                traceLoginOutcome('LOGIN_AUTH_UNAVAILABLE');
                 showToast("Firebase Auth no está disponible para el acceso.", "error");
                 return;
             }
 
             const resolvedEmail = resolveClientLoginEmail(identifier);
             if (!resolvedEmail) {
+                traceLoginOutcome('LOGIN_EMAIL_INVALID');
                 showToast(
                     identifier.includes('@')
                         ? "El correo electrónico no es válido."
@@ -6689,6 +6711,7 @@
                 const userCred = await window.firebaseAuthUtils.signInWithEmailAndPassword(window.authInstance, resolvedEmail, password);
                 authUser = userCred?.user || null;
             } catch (fbErr) {
+                traceLoginOutcome('LOGIN_AUTH_FAILED', { code: fbErr?.code || 'sin-codigo' });
                 showToast(getClientLoginAuthErrorMessage(fbErr), "error");
                 return;
             }
@@ -6699,6 +6722,7 @@
             }
 
             if (!window.dbInstance || !window.firestoreUtils || !window.firestoreUtils.doc || !window.firestoreUtils.getDoc) {
+                traceLoginOutcome('LOGIN_FIRESTORE_UNAVAILABLE');
                 showToast("No pudimos cargar tu perfil de cliente.", "error");
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
@@ -6718,7 +6742,7 @@
                     // el navegador, y el navegador no es autoridad sobre el
                     // perfil. Se dice exactamente qué pasa en vez de cerrar
                     // sesión sin explicación.
-                    console.warn('[AUTH] login sin perfil Firestore para el uid autenticado');
+                    traceLoginOutcome('LOGIN_PROFILE_NOT_FOUND', { uidLen: authUser.uid.length });
                     showToast("Tu perfil de Ramos Nails no está configurado correctamente. Escríbenos para completarlo.", "error");
                     if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                         await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
@@ -6731,7 +6755,10 @@
                 // Sin el código de error, "no pudimos cargar tu perfil" tapaba
                 // por igual un problema de permisos, uno de red y un bloqueo
                 // del navegador. Se distinguen, sin imprimir datos personales.
-                console.warn('[AUTH] fallo leyendo el perfil:', cloudErr?.code || 'sin-codigo');
+                traceLoginOutcome(
+                    cloudErr?.code === 'permission-denied' ? 'LOGIN_PROFILE_READ_DENIED' : 'LOGIN_PROFILE_READ_ERROR',
+                    { code: cloudErr?.code || 'sin-codigo' }
+                );
                 showToast(getProfileReadErrorMessage(cloudErr), "error");
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
@@ -6741,6 +6768,10 @@
 
             const profileRole = firestoreProfile.role || 'client';
             if (profileRole === 'admin') {
+                // Rechazo deliberado, no un fallo: una cuenta de administración
+                // no abre sesión de clienta. Se traza igual para que quede
+                // claro al diagnosticar por qué se cerró la sesión.
+                traceLoginOutcome('LOGIN_ROLE_ADMIN');
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                 }
@@ -6761,7 +6792,7 @@
 
             if (!safeSessionProfile.name || !safeSessionProfile.phone || !safeSessionProfile.email) {
                 const faltan = ['name', 'phone', 'email'].filter((f) => !safeSessionProfile[f]);
-                console.warn('[AUTH] perfil existente pero incompleto. Campos vacíos:', faltan.join(', '));
+                traceLoginOutcome('LOGIN_PROFILE_INVALID', { camposVacios: faltan });
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                 }
@@ -6776,6 +6807,12 @@
             // la sesión local se deriva del documento, nunca al revés.
 
             persistCurrentClientSession(safeSessionProfile);
+
+            traceLoginOutcome('LOGIN_SUCCESS', {
+                role: profileRole,
+                sesionCreada: Boolean(currentUserSession),
+                uidCoincide: currentUserSession?.uid === window.authInstance?.currentUser?.uid
+            });
 
             updateUserNavigationUI();
             if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();

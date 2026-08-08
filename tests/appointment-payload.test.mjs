@@ -40,6 +40,96 @@ function toCanonicalTime(timeStr) {
     return minutes === null ? null : formatMinutesTo24h(minutes);
 }
 
+describe('conversión a formato canónico', () => {
+    // Los casos frontera importan: mediodía y medianoche son donde el formato
+    // de 12 horas se rompe si se convierte a mano (12 PM no es 00:00, y 12 AM
+    // no es 12:00).
+    const CONVERSIONES = [
+        ['02:00 PM', '14:00'],
+        ['02:30 PM', '14:30'],
+        ['12:00 PM', '12:00'],
+        ['12:00 AM', '00:00'],
+        ['07:00 PM', '19:00'],
+        ['08:00 AM', '08:00'],
+        ['12:30 AM', '00:30'],
+        ['11:59 PM', '23:59']
+    ];
+
+    for (const [visible, canonico] of CONVERSIONES) {
+        test(`${visible} -> ${canonico}`, () => {
+            assert.equal(toCanonicalTime(visible), canonico);
+        });
+    }
+
+    test('una hora ya canónica se queda igual', () => {
+        for (const canonico of ['00:00', '08:00', '14:30', '23:59']) {
+            assert.equal(toCanonicalTime(canonico), canonico);
+        }
+    });
+
+    test('una hora ilegible devuelve null en vez de inventar una', () => {
+        for (const basura of ['', null, undefined, 'tarde', '25:00', '14:70']) {
+            assert.equal(toCanonicalTime(basura), null);
+        }
+    });
+});
+
+describe('payload final de una cita de clienta', () => {
+    // Réplica del payload que produce prepareWhatsAppBooking() tras el fix.
+    function citaDeClienta(turnoVisible, durationMinutes) {
+        const startMinutes = parseTimeToMinutes(turnoVisible);
+        return {
+            startTime: formatMinutesTo24h(startMinutes),
+            endTime: formatMinutesTo24h(startMinutes + durationMinutes),
+            time: turnoVisible,
+            durationMinutes
+        };
+    }
+
+    test('startTime y endTime miden exactamente 5 y son HH:MM', () => {
+        for (const turno of ALL_TIME_SLOTS) {
+            const cita = citaDeClienta(turno, 120);
+            assert.equal(cita.startTime.length, 5);
+            assert.equal(cita.endTime.length, 5);
+            assert.match(cita.startTime, /^\d{2}:\d{2}$/);
+            assert.match(cita.endTime, /^\d{2}:\d{2}$/);
+        }
+    });
+
+    test('time conserva el texto visible que lee la UI', () => {
+        const cita = citaDeClienta('02:00 PM', 120);
+        assert.equal(cita.time, '02:00 PM');
+        assert.equal(cita.startTime, '14:00');
+    });
+
+    test('una cita de 2 h que empieza a las 14:00 termina a las 16:00', () => {
+        const cita = citaDeClienta('02:00 PM', 120);
+        assert.equal(cita.startTime, '14:00');
+        assert.equal(cita.endTime, '16:00');
+    });
+
+    test('esa cita bloquea exactamente 14:00, 14:30, 15:00 y 15:30', () => {
+        const cita = citaDeClienta('02:00 PM', 120);
+        assert.deepEqual(
+            computeSlotStartTimes(cita.startTime, cita.durationMinutes),
+            ['14:00', '14:30', '15:00', '15:30']
+        );
+    });
+
+    test('y sus ids de lock son los que espera Firestore', () => {
+        const cita = citaDeClienta('02:00 PM', 120);
+        const ids = computeSlotStartTimes(cita.startTime, cita.durationMinutes)
+            .map((inicio) => buildSlotId('2026-09-01', inicio, DEFAULT_SALON_ID));
+
+        assert.deepEqual(ids, [
+            'nails-con-val_2026-09-01_14:00',
+            'nails-con-val_2026-09-01_14:30',
+            'nails-con-val_2026-09-01_15:00',
+            'nails-con-val_2026-09-01_15:30'
+        ]);
+    });
+});
+
 describe('formato de hora visible vs formato guardado', () => {
     test('los turnos que ve la clienta son de 12 h y NO caben en las Rules', () => {
         // Esto documenta la causa raíz: el texto visible mide 8 caracteres y el
