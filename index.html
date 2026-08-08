@@ -3296,12 +3296,14 @@
         import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import * as bookingSlots from "./assets/js/booking-slots.js";
         import * as loyalty from "./assets/js/loyalty.js";
+        import * as sanitize from "./assets/js/sanitize.js";
 
         // La aritmética de locks y las reglas de fidelidad viven en módulos
         // aparte para poder probarlas con `node --test`. Aquí solo se publican
         // para el script clásico.
         window.bookingSlotUtils = bookingSlots;
         window.loyaltyUtils = loyalty;
+        window.sanitizeUtils = sanitize;
 
         const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
 
@@ -3613,18 +3615,41 @@
                 }
             };
 
+            // Sincronización en tiempo real de las Reseñas.
+            // Antes no existía: las reseñas se ESCRIBÍAN en Firestore pero se
+            // LEÍAN de `localStorage`, así que cada clienta veía únicamente las
+            // suyas y la moderación del admin no llegaba a nadie.
+            onSnapshot(collection(db, 'reviews'), (snapshot) => {
+                const reviews = [];
+                snapshot.forEach((docSnap) => {
+                    reviews.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                reviews.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+                window.clientReviewsList = reviews;
+                localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
+                if (typeof window.renderReviewsList === 'function') window.renderReviewsList();
+            }, (err) => {
+                console.warn("No pudimos sincronizar las reseñas:", err);
+            });
+
             // Sincronización en tiempo real del Muro de la Comunidad
             onSnapshot(collection(db, 'community_posts'), (snapshot) => {
-                if (!snapshot.empty) {
-                    const posts = [];
-                    snapshot.forEach((dSnap) => {
-                        posts.push({ id: dSnap.id, ...dSnap.data() });
-                    });
-                    posts.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
-                    localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-                    if (typeof window.renderCommunityFeed === 'function') window.renderCommunityFeed();
-                }
-            }, (err) => { });
+                // Antes se ignoraba el snapshot vacío, así que borrar la última
+                // publicación desde el panel dejaba el muro pintado con la
+                // copia local: la moderación no se veía.
+                const posts = [];
+                snapshot.forEach((dSnap) => {
+                    posts.push({ id: dSnap.id, ...dSnap.data() });
+                });
+                posts.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
+
+                window.communityPostsList = posts;
+                localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
+                if (typeof window.renderCommunityFeed === 'function') window.renderCommunityFeed();
+            }, (err) => {
+                console.warn("No pudimos sincronizar el muro de la comunidad:", err);
+            });
 
         } catch (e) {
             console.warn("Inicialización de Firebase omitida:", e);
@@ -3708,12 +3733,36 @@
         }
 
         function escapeHtml(str) {
-            return String(str || '')
+            return String(str === null || str === undefined ? '' : str)
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        /**
+         * Devuelve una URL de imagen segura para insertar en un `src`, o una
+         * cadena vacía si no lo es.
+         *
+         * Las fotos de reseñas y del muro las escribe cualquiera, y hasta ahora
+         * se interpolaban tal cual dentro de `src="${...}"`. Bastaba con
+         * guardar `x" onerror="..."` para ejecutar código en el navegador de
+         * todas las visitantes.
+         */
+        function safeImageSrc(value) {
+            return escapeHtml(cleanImageUrl(value));
+        }
+
+        /**
+         * Versión para asignar directamente a `element.src`, donde no hay que
+         * escapar HTML pero sí conviene rechazar esquemas que no sean imagen.
+         */
+        function cleanImageUrl(value) {
+            const clean = window.sanitizeUtils
+                ? window.sanitizeUtils.sanitizeImageUrl(value)
+                : null;
+            return clean || '';
         }
 
         // ── Capa de persistencia (Fase 4) ──────────────────────────────
@@ -4533,7 +4582,7 @@
             const current = currentCommunityImages[currentCommunityCarouselIndex];
             if (!current) return;
 
-            document.getElementById('community-carousel-img').src = current.url;
+            document.getElementById('community-carousel-img').src = cleanImageUrl(current.url);
             document.getElementById('community-carousel-author').textContent = `Publicación de ${current.name} (${currentCommunityCarouselIndex + 1} de ${currentCommunityImages.length})`;
             document.getElementById('community-carousel-caption').textContent = `"${current.message}"`;
         }
@@ -5654,7 +5703,7 @@
             if (msgEl) msgEl.textContent = message;
 
             if (imageUrl && imgEl && iconEl) {
-                imgEl.src = imageUrl;
+                imgEl.src = cleanImageUrl(imageUrl);
                 imgEl.classList.remove('hidden');
                 iconEl.classList.add('hidden');
             } else if (imgEl && iconEl) {
@@ -8016,7 +8065,7 @@
 
                 card.innerHTML = `
                     <div class="w-full h-full relative" onclick="openLightbox(${index})">
-                        <img src="${item.url}" alt="${escapeHtml(item.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                        <img src="${safeImageSrc(item.url)}" alt="${escapeHtml(item.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                         <div class="absolute inset-0 bg-gradient-to-t from-brand-950/85 via-brand-950/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end text-white">
                             <span class="text-xs text-brand-300 font-semibold">NailsConVal</span>
                             <h4 class="text-sm font-bold">${escapeHtml(item.title)}</h4>
@@ -8076,7 +8125,7 @@
 
             const previewImg = document.getElementById('gallery-photo-preview');
             const container = document.getElementById('gallery-preview-container');
-            if (previewImg) previewImg.src = item.url;
+            if (previewImg) previewImg.src = cleanImageUrl(item.url);
             if (container) container.classList.remove('hidden');
 
             document.getElementById('admin-gallery-modal').classList.remove('hidden');
@@ -8167,7 +8216,7 @@
                 card.innerHTML = `
                     <div class="space-y-2">
                         <div class="relative rounded-xl overflow-hidden aspect-square bg-gray-900 border border-gray-800">
-                            <img src="${item.url}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">
+                            <img src="${safeImageSrc(item.url)}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover">
                         </div>
                         <h5 class="font-bold text-white text-xs truncate">${escapeHtml(item.title)}</h5>
                     </div>
@@ -8217,7 +8266,7 @@
             const caption = document.getElementById('lightbox-caption');
             const counter = document.getElementById('lightbox-counter');
 
-            if (img) img.src = current.url;
+            if (img) img.src = cleanImageUrl(current.url);
             if (caption) caption.textContent = current.title;
             if (counter) counter.textContent = `Galería NailsConVal (${currentGalleryIndex + 1} de ${GALLERY_ITEMS_DATA.length})`;
         }
@@ -8239,37 +8288,48 @@
             reader.readAsDataURL(file);
         };
 
-        window.submitNewReview = function (event) {
+        window.submitNewReview = async function (event) {
             event.preventDefault();
-            const name = document.getElementById('rev-name').value.trim();
-            const service = document.getElementById('rev-service').value.trim();
-            const rating = parseInt(document.getElementById('rev-rating').value) || 5;
-            const comment = document.getElementById('rev-comment').value.trim();
 
-            if (!name || !service || !comment) {
-                showToast("Por favor completa tu nombre, servicio y comentario.", "error");
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            if (!authUser) {
+                showToast("No pudimos publicar tu reseña ahora mismo. Recarga la página e intenta de nuevo.", "error");
                 return;
             }
 
-            const newReview = {
-                id: 'rev_' + Date.now(),
-                name: name,
-                service: service,
-                rating: rating,
-                comment: comment,
-                photoUrl: reviewPhotoBase64,
-                createdAt: new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
-            };
+            let newReview;
+            try {
+                // El documento se construye ya saneado y con `authorUid` y
+                // `salonId`, que es lo que exigen las Rules. Una foto que no
+                // sea una imagen válida se descarta aquí, no al pintarla.
+                newReview = window.sanitizeUtils.buildReviewDocument({
+                    id: 'rev_' + Date.now(),
+                    name: document.getElementById('rev-name').value,
+                    service: document.getElementById('rev-service').value,
+                    rating: document.getElementById('rev-rating').value,
+                    comment: document.getElementById('rev-comment').value,
+                    photoUrl: reviewPhotoBase64,
+                    authorUid: authUser.uid,
+                    salonId: 'nails-con-val',
+                    createdAt: new Date().toISOString()
+                });
+            } catch (error) {
+                showToast(getContentErrorMessage(error), "error");
+                return;
+            }
 
-            let reviews = JSON.parse(localStorage.getItem('ncv_client_reviews') || '[]');
-            reviews.unshift(newReview);
-            localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
+            if (!isFirestoreReady()) {
+                showToast("No pudimos conectar para publicar tu reseña. Revisa tu internet.", "error");
+                return;
+            }
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { collection, addDoc } = window.firestoreUtils;
-                    addDoc(collection(window.dbInstance, 'reviews'), newReview);
-                } catch (e) { }
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(doc(window.dbInstance, 'reviews', newReview.id), newReview);
+            } catch (error) {
+                console.error("Error publicando la reseña:", error);
+                showToast("No pudimos publicar tu reseña. Intenta de nuevo.", "error");
+                return;
             }
 
             const form = document.getElementById('review-form');
@@ -8278,26 +8338,29 @@
             const previewContainer = document.getElementById('photo-preview-container');
             if (previewContainer) previewContainer.classList.add('hidden');
 
-            renderReviewsList();
             showToast("🌟 ¡Gracias! Tu reseña ha sido publicada exitosamente.");
         };
+
+        function getContentErrorMessage(error) {
+            switch (error?.message) {
+                case 'CONTENT_MISSING_AUTHOR':
+                    return 'Necesitamos una sesión activa para publicar. Recarga la página.';
+                case 'CONTENT_EMPTY_FIELDS':
+                    return 'Completa todos los campos antes de publicar.';
+                default:
+                    return 'No pudimos preparar tu publicación.';
+            }
+        }
 
         window.renderReviewsList = function () {
             const container = document.getElementById('reviews-list');
             if (!container) return;
 
-            let reviews = JSON.parse(localStorage.getItem('ncv_client_reviews') || 'null');
-            if (!reviews) {
-                reviews = [];
-                localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
-            } else {
-                // Limpiar reseñas de prueba si alguien las tiene cacheadas
-                const initialLen = reviews.length;
-                reviews = reviews.filter(r => !r.id || !r.id.startsWith('rev_seed_'));
-                if (reviews.length !== initialLen) {
-                    localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
-                }
-            }
+            // La autoridad es la colección `reviews` de Firestore. La cache
+            // local solo sirve para el primer pintado, antes de que llegue el
+            // snapshot o si la red falla.
+            const reviews = (window.clientReviewsList || readCache('ncv_client_reviews', []))
+                .filter(r => r && (!r.id || !String(r.id).startsWith('rev_seed_')));
 
             container.innerHTML = '';
             reviews.forEach(rev => {
@@ -8308,7 +8371,7 @@
                 if (rev.photoUrl) {
                     photoHtml = `
                         <div class="mt-3 rounded-xl overflow-hidden max-h-48 border border-brand-200 shadow-xs">
-                            <img src="${rev.photoUrl}" alt="Foto de ${escapeHtml(rev.name)}" class="w-full h-40 object-cover hover:scale-105 transition-transform duration-300">
+                            <img src="${safeImageSrc(rev.photoUrl)}" alt="Foto de ${escapeHtml(rev.name)}" class="w-full h-40 object-cover hover:scale-105 transition-transform duration-300">
                         </div>
                     `;
                 }
@@ -8358,86 +8421,101 @@
             });
         };
 
-        window.adminEditCommunityPost = function (postId) {
-            let posts = JSON.parse(localStorage.getItem('ncv_community_posts') || '[]');
-            const idx = posts.findIndex(p => p.id === postId);
-            if (idx === -1) return;
-
-            const currentMsg = posts[idx].message;
-            const newMsg = prompt(`Modificar mensaje de la publicación de ${posts[idx].name}:`, currentMsg);
-
-            if (newMsg !== null && newMsg.trim() !== '') {
-                posts[idx].message = newMsg.trim();
-                localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'community_posts', postId), { message: newMsg.trim() }, { merge: true });
-                    } catch (e) { }
-                }
-                renderCommunityFeed();
-                showToast("✏️ Publicación de la comunidad editada con éxito.");
+        /**
+         * Moderación de admin.
+         *
+         * Escribe en Firestore y espera confirmación. Si las Rules rechazan
+         * —por ejemplo, porque la sesión dejó de ser de administración— la UI
+         * no debe decir que se moderó algo que sigue publicado.
+         */
+        async function moderateContent(collectionName, docId, { patch, remove, successMessage }) {
+            if (!isFirestoreReady()) {
+                showToast('No pudimos conectar con la nube. Intenta de nuevo.', 'error');
+                return false;
             }
+
+            try {
+                const { doc, setDoc, deleteDoc } = window.firestoreUtils;
+                const ref = doc(window.dbInstance, collectionName, docId);
+                if (remove) {
+                    await deleteDoc(ref);
+                } else {
+                    await setDoc(ref, patch, { merge: true });
+                }
+            } catch (error) {
+                console.error(`Error moderando ${collectionName}/${docId}:`, error);
+                showToast('No pudimos aplicar el cambio. Revisa que tu sesión siga siendo de administración.', 'error');
+                return false;
+            }
+
+            showToast(successMessage);
+            return true;
+        }
+
+        window.adminEditCommunityPost = async function (postId) {
+            const posts = readCache('ncv_community_posts', []);
+            const post = posts.find(p => p.id === postId);
+            if (!post) return;
+
+            const newMsg = prompt(`Modificar mensaje de la publicación de ${post.name}:`, post.message);
+            if (newMsg === null) return;
+
+            const clean = window.sanitizeUtils.sanitizeUserText(newMsg, 2000);
+            if (!clean) {
+                showToast('El mensaje no puede quedar vacío.', 'error');
+                return;
+            }
+
+            await moderateContent('community_posts', postId, {
+                patch: { message: clean },
+                successMessage: '✏️ Publicación de la comunidad editada con éxito.'
+            });
         };
 
-        window.adminDeleteCommunityPost = function (postId) {
-            let posts = JSON.parse(localStorage.getItem('ncv_community_posts') || '[]');
-            const idx = posts.findIndex(p => p.id === postId);
-            if (idx === -1) return;
+        window.adminDeleteCommunityPost = async function (postId) {
+            const posts = readCache('ncv_community_posts', []);
+            const post = posts.find(p => p.id === postId);
+            if (!post) return;
 
-            if (confirm(`¿Estás segura de eliminar la publicación de ${posts[idx].name}?`)) {
-                posts.splice(idx, 1);
-                localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, deleteDoc } = window.firestoreUtils;
-                        deleteDoc(doc(window.dbInstance, 'community_posts', postId));
-                    } catch (e) { }
-                }
-                renderCommunityFeed();
-                showToast("🗑️ Publicación eliminada de la comunidad.");
-            }
+            if (!confirm(`¿Estás segura de eliminar la publicación de ${post.name}?`)) return;
+
+            await moderateContent('community_posts', postId, {
+                remove: true,
+                successMessage: '🗑️ Publicación eliminada de la comunidad.'
+            });
         };
 
-        window.adminEditReview = function (reviewId) {
-            let reviews = JSON.parse(localStorage.getItem('ncv_client_reviews') || '[]');
-            const idx = reviews.findIndex(r => r.id === reviewId);
-            if (idx === -1) return;
+        window.adminEditReview = async function (reviewId) {
+            const reviews = window.clientReviewsList || readCache('ncv_client_reviews', []);
+            const review = reviews.find(r => r.id === reviewId);
+            if (!review) return;
 
-            const currentComment = reviews[idx].comment;
-            const newComment = prompt(`Modificar texto de la reseña de ${reviews[idx].name}:`, currentComment);
+            const newComment = prompt(`Modificar texto de la reseña de ${review.name}:`, review.comment);
+            if (newComment === null) return;
 
-            if (newComment !== null && newComment.trim() !== '') {
-                reviews[idx].comment = newComment.trim();
-                localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'reviews', reviewId), { comment: newComment.trim() }, { merge: true });
-                    } catch (e) { }
-                }
-                renderReviewsList();
-                showToast("✏️ Reseña editada con éxito.");
+            const clean = window.sanitizeUtils.sanitizeUserText(newComment, 2000);
+            if (!clean) {
+                showToast('La reseña no puede quedar vacía.', 'error');
+                return;
             }
+
+            await moderateContent('reviews', reviewId, {
+                patch: { comment: clean },
+                successMessage: '✏️ Reseña editada con éxito.'
+            });
         };
 
-        window.adminDeleteReview = function (reviewId) {
-            let reviews = JSON.parse(localStorage.getItem('ncv_client_reviews') || '[]');
-            const idx = reviews.findIndex(r => r.id === reviewId);
-            if (idx === -1) return;
+        window.adminDeleteReview = async function (reviewId) {
+            const reviews = window.clientReviewsList || readCache('ncv_client_reviews', []);
+            const review = reviews.find(r => r.id === reviewId);
+            if (!review) return;
 
-            if (confirm(`¿Estás segura de eliminar la reseña de ${reviews[idx].name}?`)) {
-                reviews.splice(idx, 1);
-                localStorage.setItem('ncv_client_reviews', JSON.stringify(reviews));
-                if (window.dbInstance && window.firestoreUtils) {
-                    try {
-                        const { doc, deleteDoc } = window.firestoreUtils;
-                        deleteDoc(doc(window.dbInstance, 'reviews', reviewId));
-                    } catch (e) { }
-                }
-                renderReviewsList();
-                showToast("🗑️ Reseña eliminada de la web.");
-            }
+            if (!confirm(`¿Estás segura de eliminar la reseña de ${review.name}?`)) return;
+
+            await moderateContent('reviews', reviewId, {
+                remove: true,
+                successMessage: '🗑️ Reseña eliminada de la web.'
+            });
         };
 
         let communityPhotoBase64 = null;
@@ -8473,79 +8551,100 @@
             if (container) container.classList.add('hidden');
         };
 
-        window.submitCommunityPost = function (event) {
+        window.submitCommunityPost = async function (event) {
             event.preventDefault();
-            const nameInput = document.getElementById('comm-name');
-            const msgInput = document.getElementById('comm-message');
 
-            const name = nameInput ? nameInput.value.trim() : '';
-            const message = msgInput ? msgInput.value.trim() : '';
-
-            if (!name || !message) {
-                showToast("Por favor ingresa tu nombre y mensaje para publicar.", "error");
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            if (!authUser) {
+                showToast("No pudimos publicar ahora mismo. Recarga la página e intenta de nuevo.", "error");
                 return;
             }
 
-            const newPost = {
-                id: 'post_' + Date.now(),
-                name: name,
-                message: message,
-                photoUrl: communityPhotoBase64 || null,
-                likes: 0,
-                createdAt: new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-            };
+            let newPost;
+            try {
+                newPost = window.sanitizeUtils.buildCommunityPostDocument({
+                    id: 'post_' + Date.now(),
+                    name: document.getElementById('comm-name')?.value,
+                    message: document.getElementById('comm-message')?.value,
+                    photoUrl: communityPhotoBase64,
+                    authorUid: authUser.uid,
+                    salonId: 'nails-con-val',
+                    createdAt: new Date().toISOString()
+                });
+            } catch (error) {
+                showToast(getContentErrorMessage(error), "error");
+                return;
+            }
 
-            let posts = JSON.parse(localStorage.getItem('ncv_community_posts') || '[]');
-            posts.unshift(newPost);
-            localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
+            if (!isFirestoreReady()) {
+                showToast("No pudimos conectar para publicar. Revisa tu internet.", "error");
+                return;
+            }
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'community_posts', newPost.id), newPost);
-                } catch (e) { }
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(doc(window.dbInstance, 'community_posts', newPost.id), newPost);
+            } catch (error) {
+                console.error("Error publicando en el muro:", error);
+                showToast("No pudimos compartir tu publicación. Intenta de nuevo.", "error");
+                return;
             }
 
             const form = document.getElementById('community-post-form');
             if (form) form.reset();
             window.removeCommunityImage();
 
-            window.renderCommunityFeed();
             showToast("💬 ¡Tu publicación ha sido compartida en el Muro de la Comunidad!");
         };
 
-        window.likeCommunityPost = function (postId) {
-            let posts = JSON.parse(localStorage.getItem('ncv_community_posts') || '[]');
-            const idx = posts.findIndex(p => p.id === postId);
-            if (idx >= 0) {
-                posts[idx].likes = (posts[idx].likes || 0) + 1;
-                localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-                if (window.dbInstance && window.firestoreUtils && postId) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        setDoc(doc(window.dbInstance, 'community_posts', postId), { likes: posts[idx].likes }, { merge: true });
-                    } catch (e) { }
-                }
-                window.renderCommunityFeed();
-                showToast("❤️ ¡Te ha gustado esta publicación!");
+        /**
+         * Un "me gusta" por publicación y por navegador.
+         *
+         * Las Rules solo aceptan que `likes` suba exactamente en uno y que no
+         * cambie ningún otro campo, así que el incremento se hace sobre el
+         * valor que hay en la nube, no sobre una copia local. El registro local
+         * evita que la misma persona sume sin parar; no es una garantía
+         * (basta borrar el navegador), pero corta el abuso casual.
+         */
+        window.likeCommunityPost = async function (postId) {
+            if (!postId || !isFirestoreReady()) return;
+
+            const liked = readCache('ncv_community_likes', []);
+            if (liked.includes(postId)) {
+                showToast("Ya le habías dado me gusta a esta publicación.");
+                return;
             }
+
+            const posts = readCache('ncv_community_posts', []);
+            const current = posts.find(p => p.id === postId);
+            if (!current) return;
+
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(
+                    doc(window.dbInstance, 'community_posts', postId),
+                    { likes: (Number(current.likes) || 0) + 1 },
+                    { merge: true }
+                );
+            } catch (error) {
+                console.error("Error registrando el me gusta:", error);
+                showToast("No pudimos registrar tu me gusta. Intenta de nuevo.", "error");
+                return;
+            }
+
+            liked.push(postId);
+            cacheLocally('ncv_community_likes', liked);
+            showToast("❤️ ¡Te ha gustado esta publicación!");
         };
 
         window.renderCommunityFeed = function () {
             const container = document.getElementById('community-feed-container');
             if (!container) return;
 
-            let posts = JSON.parse(localStorage.getItem('ncv_community_posts') || 'null');
-            if (!posts) {
-                posts = [];
-                localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-            } else {
-                const initialLen = posts.length;
-                posts = posts.filter(p => !p.id || !p.id.startsWith('seed_post_'));
-                if (posts.length !== initialLen) {
-                    localStorage.setItem('ncv_community_posts', JSON.stringify(posts));
-                }
-            }
+            // La autoridad es la colección `community_posts`. La cache local
+            // solo cubre el primer pintado o una caída de red.
+            const posts = (window.communityPostsList || readCache('ncv_community_posts', []))
+                .filter(p => p && (!p.id || !String(p.id).startsWith('seed_post_')));
 
             container.innerHTML = '';
 
@@ -8569,7 +8668,7 @@
                 if (post.photoUrl) {
                     photoHtml = `
                         <div class="rounded-2xl overflow-hidden max-h-64 border border-brand-100 shadow-xs">
-                            <img src="${post.photoUrl}" alt="Foto de ${escapeHtml(post.name)}" class="w-full h-48 object-cover hover:scale-105 transition-transform duration-300">
+                            <img src="${safeImageSrc(post.photoUrl)}" alt="Foto de ${escapeHtml(post.name)}" class="w-full h-48 object-cover hover:scale-105 transition-transform duration-300">
                         </div>
                     `;
                 }
@@ -9035,7 +9134,7 @@
             const msg = document.getElementById('marketing-popup-message');
 
             if (overlay && modal && img && title && msg) {
-                img.src = p.imageUrl;
+                img.src = cleanImageUrl(p.imageUrl);
                 title.textContent = p.title || 'Promoción Especial';
                 msg.textContent = p.message || '';
 
