@@ -1735,8 +1735,8 @@
                     <div>
                         <label class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Crea
                             tu Contraseña</label>
-                        <input type="password" id="reg-password" minlength="4" required
-                            placeholder="Mínimo 4 caracteres" class="ncv-input">
+                        <input type="password" id="reg-password" minlength="6" required
+                            placeholder="Mínimo 6 caracteres" class="ncv-input">
                     </div>
                     <button type="submit" class="ncv-btn-register">
                         <i class="fa-solid fa-user-plus"></i>
@@ -3106,7 +3106,7 @@
                 <div class="bg-gray-900 p-6 sm:p-8 rounded-3xl border border-gray-800 shadow-xl space-y-6">
                     <h3 class="font-serif text-xl font-bold text-white flex items-center gap-2">
                         <i class="fa-solid fa-lock text-blue-400"></i>
-                        <span>Seguridad & PIN de Administradora</span>
+                        <span>Seguridad & Configuración</span>
                     </h3>
 
                     <form onsubmit="saveAdminPasswordChange(event)"
@@ -3124,8 +3124,8 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-300 uppercase mb-1">Nueva Contraseña</label>
-                            <input type="password" id="admin-new-pass-input" required minlength="4"
-                                placeholder="Nueva contraseña"
+                            <input type="password" id="admin-new-pass-input" required minlength="6"
+                                placeholder="Nueva contraseña (mínimo 6 caracteres)"
                                 class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
                         </div>
                         <button type="submit"
@@ -3135,15 +3135,7 @@
                         </button>
                     </form>
 
-                    <form onsubmit="saveAdminPinChange(event)" class="space-y-4 pt-2">
-                        <div>
-                            <label class="block text-xs font-bold text-gray-300 uppercase mb-1">PIN Rápido de
-                                Seguridad</label>
-                            <input type="password" id="admin-new-pin-input" minlength="4" maxlength="8"
-                                placeholder="Ingresa PIN rápido"
-                                class="w-full bg-gray-950 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-400">
-                        </div>
-
+                    <form onsubmit="saveAdminPaymentKeyChange(event)" class="space-y-4 pt-2">
                         <div>
                             <label class="block text-xs font-bold text-gray-300 uppercase mb-1">Número de la Llave de
                                 Pago</label>
@@ -3253,8 +3245,8 @@
 
     <script type="module">
         import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
 
@@ -3278,13 +3270,79 @@
             window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged };
             window.firestoreUtils = { doc, setDoc, addDoc, getDoc, collection, query, where, getDocs, deleteDoc };
 
-            onAuthStateChanged(auth, (user) => {
-                if (user && !user.isAnonymous && user.email) {
-                    window.isAdminAuthenticated = true;
-                    if (typeof window.renderCommunityFeed === 'function') window.renderCommunityFeed();
-                    if (typeof window.renderReviewsList === 'function') window.renderReviewsList();
-                    if (typeof window.renderGalleryPortfolio === 'function') window.renderGalleryPortfolio();
+            window.currentFirebaseUser = null;
+            window.currentAdminProfile = null;
+
+            window.isCurrentUserAdmin = async function (user = window.authInstance?.currentUser) {
+                if (!user || user.isAnonymous) return false;
+
+                try {
+                    const adminDocRef = doc(db, 'users', user.uid);
+                    const adminSnap = await getDoc(adminDocRef);
+                    return adminSnap.exists() && adminSnap.data()?.role === 'admin';
+                } catch (err) {
+                    console.warn("Admin role check failed:", err);
+                    return false;
                 }
+            };
+
+            window.refreshAdminSession = async function (user = window.authInstance?.currentUser) {
+                window.currentFirebaseUser = user || null;
+                const isAdmin = await window.isCurrentUserAdmin(user);
+                window.isAdminAuthenticated = isAdmin;
+                if (!isAdmin) {
+                    window.currentAdminProfile = null;
+                }
+                return isAdmin;
+            };
+
+            function clearAdminSessionMemory() {
+                window.isAdminAuthenticated = false;
+                window.currentAdminProfile = null;
+                window.currentFirebaseUser = window.authInstance ? window.authInstance.currentUser : null;
+            }
+
+            onAuthStateChanged(auth, async (user) => {
+                window.currentFirebaseUser = user || null;
+
+                if (!user || user.isAnonymous) {
+                    clearAdminSessionMemory();
+                    return;
+                }
+
+                const isAdmin = await checkFirebaseAdminRole(user);
+                if (!isAdmin) {
+                    clearAdminSessionMemory();
+                    const adminPanel = document.getElementById('admin-panel-modal');
+                    if (adminPanel && !adminPanel.classList.contains('hidden')) {
+                        adminPanel.classList.add('hidden');
+                    }
+                    const adminAuth = document.getElementById('admin-auth-modal');
+                    if (adminAuth && !adminAuth.classList.contains('hidden')) {
+                        adminAuth.classList.add('hidden');
+                    }
+                    return;
+                }
+
+                window.isAdminAuthenticated = true;
+                window.currentAdminProfile = { uid: user.uid, email: user.email || '', role: 'admin' };
+
+                if (window.location.hash === '#admin' || window.location.pathname.endsWith('/admin')) {
+                    const authModal = document.getElementById('admin-auth-modal');
+                    if (authModal) authModal.classList.add('hidden');
+                    const panelModal = document.getElementById('admin-panel-modal');
+                    if (panelModal) panelModal.classList.remove('hidden');
+                    if (typeof window.renderAdminCharts === 'function') window.renderAdminCharts();
+                    if (typeof window.renderAdminBookingsTable === 'function') window.renderAdminBookingsTable();
+                    if (typeof window.renderAdminServicesEditor === 'function') window.renderAdminServicesEditor();
+                    if (typeof window.renderAdminGalleryEditor === 'function') window.renderAdminGalleryEditor();
+                    if (typeof loadDiscountFormValues === 'function') loadDiscountFormValues();
+                    if (typeof window.renderAdminBlockedDatesList === 'function') window.renderAdminBlockedDatesList();
+                }
+
+                if (typeof window.renderCommunityFeed === 'function') window.renderCommunityFeed();
+                if (typeof window.renderReviewsList === 'function') window.renderReviewsList();
+                if (typeof window.renderGalleryPortfolio === 'function') window.renderGalleryPortfolio();
             });
 
             signInAnonymously(auth).then(() => {
@@ -3328,11 +3386,10 @@
             onSnapshot(usersRef, (snapshot) => {
                 const allUsers = [];
                 snapshot.forEach((docSnap) => {
-                    allUsers.push({ ...docSnap.data(), id: docSnap.id });
+                    allUsers.push({ uid: docSnap.id, id: docSnap.id, ...docSnap.data() });
                 });
 
                 window.allUsersList = allUsers;
-                localStorage.setItem('ncv_users', JSON.stringify(allUsers));
 
                 if (typeof window.renderAdminBirthdays === 'function' && window.isAdminAuthenticated) window.renderAdminBirthdays();
             }, (error) => {
@@ -3494,21 +3551,46 @@
             document.body.style.touchAction = '';
         }
 
-        window.openAdminPanelModal = function () {
+        async function checkFirebaseAdminRole(user) {
+            if (!user || user.isAnonymous || !user.uid || !window.dbInstance || !window.firestoreUtils) {
+                return false;
+            }
+
+            try {
+                const { doc, getDoc } = window.firestoreUtils;
+                const snap = await getDoc(doc(window.dbInstance, 'users', user.uid));
+                return snap.exists() && snap.data() && snap.data().role === 'admin';
+            } catch (err) {
+                console.warn("Admin role check failed:", err);
+                return false;
+            }
+        }
+
+        window.openAdminPanelModal = async function () {
             lockBodyScroll();
-            if (window.isAdminAuthenticated) {
-                document.getElementById('admin-panel-modal').classList.remove('hidden');
-                renderAdminCharts();
-                renderAdminBookingsTable();
-                renderAdminServicesEditor();
-                renderAdminGalleryEditor();
-                loadDiscountFormValues();
-                renderAdminBlockedDatesList();
-            } else {
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            const isAdmin = await checkFirebaseAdminRole(authUser);
+
+            if (!isAdmin) {
+                window.isAdminAuthenticated = false;
+                window.currentAdminProfile = null;
+                document.getElementById('admin-panel-modal').classList.add('hidden');
                 document.getElementById('admin-auth-modal').classList.remove('hidden');
                 const emailInput = document.getElementById('admin-email-input');
                 if (emailInput) emailInput.focus();
+                return;
             }
+
+            window.isAdminAuthenticated = true;
+            window.currentAdminProfile = { uid: authUser.uid, email: authUser.email || '', role: 'admin' };
+            document.getElementById('admin-auth-modal').classList.add('hidden');
+            document.getElementById('admin-panel-modal').classList.remove('hidden');
+            renderAdminCharts();
+            renderAdminBookingsTable();
+            renderAdminServicesEditor();
+            renderAdminGalleryEditor();
+            loadDiscountFormValues();
+            renderAdminBlockedDatesList();
         };
 
         window.closeAdminAuthModal = function () {
@@ -3535,56 +3617,108 @@
                 return;
             }
 
-            try {
-                if (window.authInstance && window.firebaseAuthUtils && window.firebaseAuthUtils.signInWithEmailAndPassword) {
-                    await window.firebaseAuthUtils.signInWithEmailAndPassword(window.authInstance, email, password);
-                    window.isAdminAuthenticated = true;
-                    closeAdminAuthModal();
-                    showToast("🔑 Sesión de administración iniciada con éxito (Firebase Auth).");
-                    openAdminPanelModal();
-                    return;
-                }
-            } catch (err) {
-                console.warn("Firebase Auth Error:", err);
+            if (!window.authInstance || !window.firebaseAuthUtils || !window.firebaseAuthUtils.signInWithEmailAndPassword) {
+                showToast("Firebase Auth no está disponible para el acceso administrativo.", "error");
+                return;
             }
 
-            const storedPassword = localStorage.getItem('ncv_admin_password') || '1234';
-            const validEmails = ['juanpablo051918@gmail.com', 'admin@nailsconval.com', 'val@nailsconval.com'];
+            try {
+                const adminCred = await window.firebaseAuthUtils.signInWithEmailAndPassword(window.authInstance, email, password);
+                const adminUser = adminCred && adminCred.user ? adminCred.user : null;
+                const isAdmin = await checkFirebaseAdminRole(adminUser);
 
-            if (validEmails.includes(email.toLowerCase()) && (password === storedPassword || password === '1234' || password === 'admin123')) {
+                if (!isAdmin) {
+                    if (window.firebaseAuthUtils.signOut) {
+                        await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                    }
+                    window.isAdminAuthenticated = false;
+                    window.currentAdminProfile = null;
+                    showToast("Esta cuenta no tiene permisos administrativos.", "error");
+                    return;
+                }
+
+                window.currentFirebaseUser = adminUser;
                 window.isAdminAuthenticated = true;
+                window.currentAdminProfile = { uid: adminUser.uid, email: adminUser.email || email, role: 'admin' };
                 closeAdminAuthModal();
-                showToast("🔑 Sesión de administración autenticada.");
-                if (typeof renderCommunityFeed === 'function') renderCommunityFeed();
-                if (typeof renderReviewsList === 'function') renderReviewsList();
-                if (typeof renderGalleryPortfolio === 'function') renderGalleryPortfolio();
+                showToast("🔐 Sesión de administración iniciada con éxito.");
                 openAdminPanelModal();
-            } else {
-                showToast("Credenciales de administración incorrectas.", "error");
+            } catch (err) {
+                console.warn("Firebase Auth Error:", err);
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                window.isAdminAuthenticated = false;
+                window.currentAdminProfile = null;
+                showToast("Credenciales de administración incorrectas o sin permisos.", "error");
             }
         };
 
-        window.saveAdminPasswordChange = function (event) {
+        function getAdminPasswordChangeErrorMessage(error) {
+            switch (error?.code) {
+                case 'auth/wrong-password':
+                case 'auth/invalid-credential':
+                    return 'La contraseña actual no es correcta.';
+                case 'auth/requires-recent-login':
+                    return 'Por seguridad debes volver a iniciar sesión antes de cambiar la contraseña.';
+                case 'auth/weak-password':
+                    return 'La nueva contraseña debe tener al menos 6 caracteres.';
+                case 'auth/too-many-requests':
+                    return 'Demasiados intentos. Intenta de nuevo más tarde.';
+                case 'auth/network-request-failed':
+                    return 'No pudimos conectar con Firebase. Revisa tu internet.';
+                case 'auth/user-disabled':
+                    return 'No se puede actualizar la contraseña en esta cuenta.';
+                default:
+                    return 'No pudimos actualizar la contraseña administrativa.';
+            }
+        }
+
+        window.saveAdminPasswordChange = async function (event) {
             event.preventDefault();
-            const currentPass = document.getElementById('admin-current-pass-input').value.trim();
-            const newPass = document.getElementById('admin-new-pass-input').value.trim();
 
-            const storedPassword = localStorage.getItem('ncv_admin_password') || '1234';
+            const currentPassInput = document.getElementById('admin-current-pass-input');
+            const newPassInput = document.getElementById('admin-new-pass-input');
+            const currentPass = currentPassInput ? currentPassInput.value.trim() : '';
+            const newPass = newPassInput ? newPassInput.value.trim() : '';
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
 
-            if (currentPass !== storedPassword && currentPass !== '1234' && currentPass !== 'admin123') {
-                showToast("La contraseña actual es incorrecta.", "error");
+            if (!authUser || !checkFirebaseAdminRole || !(await checkFirebaseAdminRole(authUser))) {
+                showToast("No tienes una sesión administrativa válida.", "error");
                 return;
             }
 
-            if (!newPass || newPass.length < 4) {
-                showToast("La nueva contraseña debe tener al menos 4 caracteres.", "error");
+            if (!currentPass || !newPass) {
+                showToast("Completa la contraseña actual y la nueva contraseña.", "error");
                 return;
             }
 
-            localStorage.setItem('ncv_admin_password', newPass);
-            document.getElementById('admin-current-pass-input').value = '';
-            document.getElementById('admin-new-pass-input').value = '';
-            showToast("🔑 ¡Contraseña de administradora actualizada con éxito!");
+            if (newPass.length < 6) {
+                showToast("La nueva contraseña debe tener al menos 6 caracteres.", "error");
+                return;
+            }
+
+            if (currentPass === newPass) {
+                showToast("La nueva contraseña debe ser distinta a la actual.", "error");
+                return;
+            }
+
+            if (!authUser.email) {
+                showToast("No pudimos preparar la actualización de contraseña.", "error");
+                return;
+            }
+
+            try {
+                const credential = EmailAuthProvider.credential(authUser.email, currentPass);
+                await reauthenticateWithCredential(authUser, credential);
+                await updatePassword(authUser, newPass);
+
+                if (currentPassInput) currentPassInput.value = '';
+                if (newPassInput) newPassInput.value = '';
+                showToast("Contraseña administrativa actualizada correctamente.");
+            } catch (error) {
+                showToast(getAdminPasswordChangeErrorMessage(error), "error");
+            }
         };
 
         window.openAdminWalkInModal = function () {
@@ -4082,12 +4216,26 @@
             document.getElementById('community-carousel-caption').textContent = `"${current.message}"`;
         }
 
-        window.logoutAdmin = function () {
-            if (window.authInstance && window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
-                window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
-            }
+        window.logoutAdmin = async function () {
+            const wasAdminSession = !!window.isAdminAuthenticated;
+            const currentUser = window.currentFirebaseUser || (window.authInstance ? window.authInstance.currentUser : null);
+
             window.isAdminAuthenticated = false;
-            closeAdminPanelModal();
+            window.currentAdminProfile = null;
+
+            const adminPanel = document.getElementById('admin-panel-modal');
+            if (adminPanel) adminPanel.classList.add('hidden');
+            const adminAuth = document.getElementById('admin-auth-modal');
+            if (adminAuth) adminAuth.classList.add('hidden');
+            unlockBodyScroll();
+
+            if (wasAdminSession && currentUser && window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                const isAdmin = await checkFirebaseAdminRole(currentUser);
+                if (isAdmin) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+            }
+
             if (typeof renderCommunityFeed === 'function') renderCommunityFeed();
             if (typeof renderReviewsList === 'function') renderReviewsList();
             if (typeof renderGalleryPortfolio === 'function') renderGalleryPortfolio();
@@ -5487,22 +5635,28 @@
             }
         };
 
-        window.saveAdminPinChange = function (event) {
+        window.saveAdminPaymentKeyChange = async function (event) {
             event.preventDefault();
-            const newPin = document.getElementById('admin-new-pin-input').value.trim();
-            const newLlave = document.getElementById('admin-llave-number-input').value.trim();
 
-            if (newPin.length >= 4) {
-                adminPin = newPin;
-                localStorage.setItem('ncv_admin_pin', adminPin);
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            const isAdmin = authUser && typeof checkFirebaseAdminRole === 'function' ? await checkFirebaseAdminRole(authUser) : false;
+            if (!isAdmin) {
+                showToast("No tienes una sesión administrativa válida.", "error");
+                return;
             }
 
-            if (newLlave) {
-                document.getElementById('llave-card-number').textContent = newLlave;
-                document.getElementById('llave-display-number').textContent = newLlave;
+            const newLlave = document.getElementById('admin-llave-number-input')?.value.trim();
+            if (!newLlave) {
+                showToast("Ingresa un número de llave válido.", "error");
+                return;
             }
 
-            showToast("🔑 Ajustes de Seguridad y Llave actualizados.");
+            const llaveCard = document.getElementById('llave-card-number');
+            const llaveDisplay = document.getElementById('llave-display-number');
+            if (llaveCard) llaveCard.textContent = newLlave;
+            if (llaveDisplay) llaveDisplay.textContent = newLlave;
+
+            showToast("Número de llave de pago actualizado.");
         };
 
         window.saveCustomFirebaseConfig = function (event) {
@@ -5686,6 +5840,155 @@
 
 
 
+        function syncRegisterPasswordRequirements() {
+            const passwordInput = document.getElementById('reg-password');
+            if (!passwordInput) return;
+            passwordInput.minLength = 6;
+            passwordInput.placeholder = 'Mínimo 6 caracteres';
+        }
+
+        function getRegisterAuthErrorMessage(error) {
+            switch (error?.code) {
+                case 'auth/email-already-in-use':
+                    return 'Este correo ya está registrado.';
+                case 'auth/invalid-email':
+                    return 'El correo electrónico no es válido.';
+                case 'auth/weak-password':
+                    return 'La contraseña debe tener al menos 6 caracteres.';
+                case 'auth/network-request-failed':
+                    return 'No pudimos conectar con Firebase. Revisa tu internet.';
+                default:
+                    return 'No pudimos crear tu cuenta. Intenta de nuevo.';
+            }
+        }
+
+        function buildSafeClientProfile({ uid, name, phone, email, birthdate, bookedCount = 0 }) {
+            return {
+                uid,
+                salonId: 'nails-con-val',
+                name,
+                phone,
+                email,
+                birthdate,
+                role: 'client',
+                bookedCount
+            };
+        }
+
+        function getLegacyBookedCount(phone, email) {
+            try {
+                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
+                const normalizedPhone = (phone || '').replace(/\D/g, '');
+                const normalizedEmail = (email || '').toLowerCase();
+                const legacyUser = users.find(user => {
+                    const userPhone = (user.phone || '').replace(/\D/g, '');
+                    const userEmail = (user.email || '').toLowerCase();
+                    return userPhone === normalizedPhone || userEmail === normalizedEmail;
+                });
+                return Number(legacyUser?.bookedCount) || 0;
+            } catch (error) {
+                return 0;
+            }
+        }
+
+        function isValidEmailAddress(value) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value || '');
+        }
+
+        function getClientLoginAuthErrorMessage(error) {
+            switch (error?.code) {
+                case 'auth/invalid-email':
+                    return 'El correo electrónico no es válido.';
+                case 'auth/user-not-found':
+                case 'auth/wrong-password':
+                case 'auth/invalid-credential':
+                    return 'Correo o contraseña incorrectos.';
+                case 'auth/too-many-requests':
+                    return 'Demasiados intentos. Intenta de nuevo más tarde.';
+                case 'auth/user-disabled':
+                    return 'Esta cuenta está deshabilitada.';
+                case 'auth/network-request-failed':
+                    return 'No pudimos conectar con Firebase. Revisa tu internet.';
+                default:
+                    return 'Correo o contraseña incorrectos.';
+            }
+        }
+
+        function resolveClientLoginEmail(identifier) {
+            if (isValidEmailAddress(identifier)) {
+                return identifier.trim().toLowerCase();
+            }
+
+            const normalizedPhone = (identifier || '').replace(/\D/g, '');
+            if (!normalizedPhone) return null;
+
+            try {
+                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
+                const match = users.find(user => {
+                    const storedPhone = (user.phone || '').replace(/\D/g, '');
+                    return storedPhone === normalizedPhone && isValidEmailAddress(user.email);
+                });
+                return match ? match.email.trim().toLowerCase() : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function buildSafeClientSession(profileData = {}, fallbackProfile = {}) {
+            const safeProfile = {
+                uid: profileData.uid || fallbackProfile.uid || '',
+                salonId: 'nails-con-val',
+                name: (profileData.name || fallbackProfile.name || '').trim(),
+                phone: (profileData.phone || fallbackProfile.phone || '').trim(),
+                email: (profileData.email || fallbackProfile.email || '').trim(),
+                birthdate: profileData.birthdate || fallbackProfile.birthdate || '',
+                role: profileData.role || fallbackProfile.role || 'client',
+                bookedCount: Number(profileData.bookedCount ?? fallbackProfile.bookedCount ?? 0) || 0
+            };
+
+            return safeProfile;
+        }
+
+        function persistCurrentClientSession(profile) {
+            const safeProfile = buildSafeClientSession(profile);
+            currentUserSession = safeProfile;
+            localStorage.setItem('ncv_current_user', JSON.stringify(safeProfile));
+            return safeProfile;
+        }
+
+        function upsertSafeLegacyClientRecord(profile) {
+            try {
+                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
+                const normalizedProfile = buildSafeClientSession(profile);
+                const normalizedPhone = (normalizedProfile.phone || '').replace(/\D/g, '');
+                const normalizedEmail = (normalizedProfile.email || '').toLowerCase();
+                const existingIdx = users.findIndex(user => {
+                    const userPhone = (user.phone || '').replace(/\D/g, '');
+                    const userEmail = (user.email || '').toLowerCase();
+                    const userUid = (user.uid || user.id || '').toString();
+                    return userUid === normalizedProfile.uid || userPhone === normalizedPhone || userEmail === normalizedEmail;
+                });
+
+                const legacyCreatedAt = existingIdx >= 0 ? users[existingIdx].createdAt : null;
+                const safeLegacyRecord = {
+                    ...normalizedProfile,
+                    createdAt: legacyCreatedAt || new Date().toISOString()
+                };
+
+                if (existingIdx >= 0) {
+                    users[existingIdx] = safeLegacyRecord;
+                } else {
+                    users.push(safeLegacyRecord);
+                }
+
+                localStorage.setItem('ncv_users', JSON.stringify(users));
+            } catch (error) {
+                console.error("Error sanando ncv_users tras login:", error);
+            }
+        }
+
+        syncRegisterPasswordRequirements();
+
         window.handleUserRegister = async function (event) {
             event.preventDefault();
             const name = document.getElementById('reg-name').value.trim();
@@ -5693,64 +5996,102 @@
             const email = document.getElementById('reg-email').value.trim();
             const birthdate = document.getElementById('reg-birthdate').value;
             const password = document.getElementById('reg-password').value.trim();
+            const role = 'client';
 
             if (!name || !phone || !email || !birthdate || !password) {
                 showToast("Por favor completa todos los campos del registro.", "error");
                 return;
             }
 
-            const userId = 'user_' + phone.replace(/[^0-9]/g, '');
-            const userData = {
-                id: userId,
-                name: name,
-                phone: phone,
-                email: email,
-                birthdate: birthdate,
-                password: password,
-                bookedCount: 0,
-                createdAt: new Date().toISOString()
+            if (password.length < 6) {
+                showToast("La contraseña debe tener al menos 6 caracteres.", "error");
+                return;
+            }
+
+            if (!window.authInstance || !window.firebaseAuthUtils || !window.firebaseAuthUtils.createUserWithEmailAndPassword) {
+                showToast("Firebase Auth no está disponible para el registro.", "error");
+                return;
+            }
+
+            let authUser = null;
+            try {
+                const userCred = await window.firebaseAuthUtils.createUserWithEmailAndPassword(window.authInstance, email, password);
+                authUser = userCred?.user || null;
+            } catch (fbErr) {
+                showToast(getRegisterAuthErrorMessage(fbErr), "error");
+                return;
+            }
+
+            if (!authUser) {
+                showToast("No pudimos completar el registro en Firebase Auth.", "error");
+                return;
+            }
+
+            const bookedCount = getLegacyBookedCount(phone, email);
+            const safeUserProfile = buildSafeClientProfile({
+                uid: authUser.uid,
+                name,
+                phone,
+                email,
+                birthdate,
+                bookedCount
+            });
+            const cloudUserProfile = {
+                ...safeUserProfile,
+                role,
+                createdAt: serverTimestamp()
             };
 
-            if (window.authInstance && window.firebaseAuthUtils && window.firebaseAuthUtils.createUserWithEmailAndPassword) {
-                try {
-                    await window.firebaseAuthUtils.createUserWithEmailAndPassword(window.authInstance, email, password);
-                    console.log("Cuenta creada en Firebase Auth:", email);
-                } catch (fbErr) {
-                    console.warn("Firebase Auth Register warning:", fbErr);
-                }
+            if (!window.dbInstance || !window.firestoreUtils || !window.firestoreUtils.doc || !window.firestoreUtils.setDoc) {
+                showToast("Tu cuenta se creó en Firebase Auth, pero no pudimos guardar tu perfil de cliente.", "error");
+                return;
+            }
+
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(doc(window.dbInstance, 'users', authUser.uid), cloudUserProfile);
+            } catch (cloudErr) {
+                console.error("Error guardando perfil de cliente en Firestore:", cloudErr);
+                showToast("Tu cuenta se creó en Firebase Auth, pero no pudimos guardar tu perfil de cliente.", "error");
+                return;
             }
 
             try {
                 let users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const existingIdx = users.findIndex(u => u.phone === phone || u.email === email);
+                const existingIdx = users.findIndex(u => {
+                    const phoneMatch = (u.phone || '').replace(/\D/g, '') === phone.replace(/\D/g, '');
+                    const emailMatch = (u.email || '').toLowerCase() === email.toLowerCase();
+                    return phoneMatch || emailMatch;
+                });
+                const safeLocalUser = {
+                    ...safeUserProfile,
+                    role,
+                    createdAt: new Date().toISOString()
+                };
                 if (existingIdx >= 0) {
-                    users[existingIdx] = userData;
+                    users[existingIdx] = safeLocalUser;
                 } else {
-                    users.push(userData);
+                    users.push(safeLocalUser);
                 }
                 localStorage.setItem('ncv_users', JSON.stringify(users));
-                localStorage.setItem('ncv_current_user', JSON.stringify(userData));
-
-                currentUserSession = userData;
-                updateUserNavigationUI();
-                closeUserAuthModal();
-                showToast(`¡Bienvenida ${name}! Tu cuenta ha sido registrada y conectada a Firebase Auth.`);
-
-                const nameInput = document.getElementById('form-name');
-                const phoneInput = document.getElementById('form-phone');
-                if (nameInput) nameInput.value = name;
-                if (phoneInput) phoneInput.value = phone;
-
+                localStorage.setItem('ncv_current_user', JSON.stringify(safeLocalUser));
             } catch (e) {
                 console.error("Error guardando localmente:", e);
             }
 
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    await setDoc(doc(window.dbInstance, 'users', phone), userData);
-                } catch (cloudErr) { }
-            }
+            currentUserSession = {
+                ...safeUserProfile,
+                role,
+                createdAt: new Date().toISOString()
+            };
+            updateUserNavigationUI();
+            closeUserAuthModal();
+            showToast(`¡Bienvenida ${name}! Tu cuenta ha sido registrada y conectada a Firebase Auth.`);
+
+            const nameInput = document.getElementById('form-name');
+            const phoneInput = document.getElementById('form-phone');
+            if (nameInput) nameInput.value = name;
+            if (phoneInput) phoneInput.value = phone;
         };
 
         window.handleUserLogin = async function (event) {
@@ -5763,54 +6104,131 @@
                 return;
             }
 
-            if (window.authInstance && window.firebaseAuthUtils && window.firebaseAuthUtils.signInWithEmailAndPassword) {
-                try {
-                    const authEmail = identifier.includes('@') ? identifier : `${identifier}@cliente.com`;
-                    const userCred = await window.firebaseAuthUtils.signInWithEmailAndPassword(window.authInstance, authEmail, password);
-                    if (userCred && userCred.user) {
-                        console.log("Autenticado vía Firebase Auth:", userCred.user.email);
-                    }
-                } catch (fbErr) {
-                    console.warn("Firebase Auth user login notice:", fbErr);
+            if (!window.authInstance || !window.firebaseAuthUtils || !window.firebaseAuthUtils.signInWithEmailAndPassword) {
+                showToast("Firebase Auth no está disponible para el acceso.", "error");
+                return;
+            }
+
+            const looksLikeEmail = identifier.includes('@');
+            const resolvedEmail = resolveClientLoginEmail(identifier);
+            if (!resolvedEmail) {
+                if (looksLikeEmail) {
+                    showToast("El correo electrónico no es válido.", "error");
+                    return;
                 }
+
+                if (!isValidEmailAddress(identifier)) {
+                    showToast("Por seguridad, inicia sesión con el correo asociado a tu cuenta.", "error");
+                    return;
+                }
+                showToast("Por seguridad, inicia sesión con el correo asociado a tu cuenta.", "error");
+                return;
             }
 
-            let matchedUser = null;
+            let authUser = null;
             try {
-                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                matchedUser = users.find(acc => {
-                    const phoneMatch = acc.phone === identifier;
-                    const emailMatch = acc.email && acc.email.toLowerCase() === identifier.toLowerCase();
-                    return (phoneMatch || emailMatch) && acc.password === password;
-                });
-            } catch (e) {
-                console.error("Login find error:", e);
+                const userCred = await window.firebaseAuthUtils.signInWithEmailAndPassword(window.authInstance, resolvedEmail, password);
+                authUser = userCred?.user || null;
+            } catch (fbErr) {
+                showToast(getClientLoginAuthErrorMessage(fbErr), "error");
+                return;
             }
 
-            if (!matchedUser && window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, getDoc } = window.firestoreUtils;
-                    const docSnap = await getDoc(doc(window.dbInstance, 'users', identifier));
-                    if (docSnap.exists() && docSnap.data().password === password) {
-                        matchedUser = docSnap.data();
+            if (!authUser) {
+                showToast("Correo o contraseña incorrectos.", "error");
+                return;
+            }
+
+            if (!window.dbInstance || !window.firestoreUtils || !window.firestoreUtils.doc || !window.firestoreUtils.getDoc) {
+                showToast("No pudimos cargar tu perfil de cliente.", "error");
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                return;
+            }
+
+            let firestoreProfile = null;
+            try {
+                const { doc, getDoc } = window.firestoreUtils;
+                const docRef = doc(window.dbInstance, 'users', authUser.uid);
+                const docSnap = await getDoc(docRef);
+
+                if (!docSnap.exists()) {
+                    showToast("Tu perfil está incompleto. Contacta a soporte.", "error");
+                    if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                        await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                     }
-                } catch (cloudErr) { }
+                    return;
+                }
+
+                firestoreProfile = docSnap.data() || {};
+            } catch (cloudErr) {
+                console.error("Firebase profile load error:", cloudErr);
+                showToast("No pudimos cargar tu perfil de cliente.", "error");
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                return;
             }
 
-            if (matchedUser) {
-                currentUserSession = matchedUser;
-                localStorage.setItem('ncv_current_user', JSON.stringify(matchedUser));
-                updateUserNavigationUI();
-                closeUserAuthModal();
-                showToast(`¡Hola de nuevo, ${matchedUser.name}! Has iniciado sesión.`);
-
-                const nameInput = document.getElementById('form-name');
-                const phoneInput = document.getElementById('form-phone');
-                if (nameInput) nameInput.value = matchedUser.name;
-                if (phoneInput) phoneInput.value = matchedUser.phone;
-            } else {
-                showToast("Teléfono/Correo o contraseña incorrectos.", "error");
+            const profileRole = firestoreProfile.role || 'client';
+            if (profileRole === 'admin') {
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                showToast("Esta cuenta corresponde a administración. Usa el acceso administrativo.", "error");
+                return;
             }
+
+            const safeSessionProfile = buildSafeClientSession({
+                uid: authUser.uid,
+                salonId: firestoreProfile.salonId || 'nails-con-val',
+                name: firestoreProfile.name,
+                phone: firestoreProfile.phone,
+                email: firestoreProfile.email || authUser.email,
+                birthdate: firestoreProfile.birthdate,
+                role: profileRole,
+                bookedCount: firestoreProfile.bookedCount
+            });
+
+            if (!safeSessionProfile.name || !safeSessionProfile.phone || !safeSessionProfile.email) {
+                if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
+                    await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
+                }
+                showToast("Tu perfil está incompleto. Contacta a soporte.", "error");
+                return;
+            }
+
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(doc(window.dbInstance, 'users', authUser.uid), {
+                    uid: safeSessionProfile.uid,
+                    salonId: safeSessionProfile.salonId,
+                    name: safeSessionProfile.name,
+                    phone: safeSessionProfile.phone,
+                    email: safeSessionProfile.email,
+                    birthdate: safeSessionProfile.birthdate,
+                    role: profileRole,
+                    bookedCount: safeSessionProfile.bookedCount,
+                    createdAt: firestoreProfile.createdAt || serverTimestamp()
+                }, { merge: true });
+            } catch (cloudWriteErr) {
+                console.warn("No pudimos sanear el perfil en Firestore:", cloudWriteErr);
+            }
+
+            persistCurrentClientSession(safeSessionProfile);
+            upsertSafeLegacyClientRecord(safeSessionProfile);
+
+            updateUserNavigationUI();
+            if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();
+            refreshUserAppointmentsUI();
+            closeUserAuthModal();
+            showToast(`¡Hola de nuevo, ${safeSessionProfile.name}! Has iniciado sesión.`);
+
+            const nameInput = document.getElementById('form-name');
+            const phoneInput = document.getElementById('form-phone');
+            if (nameInput) nameInput.value = safeSessionProfile.name;
+            if (phoneInput) phoneInput.value = safeSessionProfile.phone;
         };
 
         window.handleUserLogout = function () {
@@ -6151,7 +6569,9 @@
                 showToast('⚠️ Debes adjuntar la foto o comprobante del abono de $10.000 COP para agendar tu cita.', 'error'); return;
             }
 
-            let servicesSummaryText = selectedList.map(s => {
+            const serviceIds = selectedList.map(s => s.id);
+            const durationMinutes = getSelectedServicesDurationMinutes(selectedList);
+            const servicesSummaryText = selectedList.map(s => {
                 if (s.id === 'mani_semi' && activeDiscountPercent > 0) {
                     const discounted = Math.round(s.price * (1 - activeDiscountPercent / 100));
                     return `${s.name} ($${discounted.toLocaleString('es-CO')} COP - Cupón ${activeDiscountPercent}%)`;
@@ -6191,11 +6611,20 @@
 
             pendingWhatsAppUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(pendingWhatsAppMessage)}`;
 
+            const appointmentDateIso = selectedDateObj ? toIsoDateString(selectedDateObj) : '';
+            const startTime = time;
+            const endTime = formatMinutesToTimeString(parseTimeToMinutes(startTime) + durationMinutes);
             const finalNotes = (window.appliedPromoCode ? `[PROMO: ${window.appliedPromoCode}] ` : '') + notes;
             pendingAppointmentData = {
                 id: 'app_' + Date.now(),
+                appointmentDateIso: appointmentDateIso,
                 dateKey: selectedDateObj ? selectedDateObj.toDateString() : date,
-                time: time,
+                serviceIds: serviceIds,
+                serviceSummary: servicesSummaryText,
+                durationMinutes: durationMinutes,
+                startTime: startTime,
+                endTime: endTime,
+                time: startTime,
                 name: name,
                 phone: phone,
                 service: servicesSummaryText,
@@ -6203,7 +6632,8 @@
                 promoCode: window.appliedPromoCode || null,
                 birthday: birthday,
                 status: 'confirmada',
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                salonId: 'nails-con-val'
             };
 
             // Mostrar el modal de preview
@@ -6347,6 +6777,45 @@
             return totalMins > 0 ? totalMins : 120;
         }
 
+        function getSelectedServicesDurationMinutes(selectedList) {
+            if (!Array.isArray(selectedList) || selectedList.length === 0) return 0;
+            return selectedList.reduce((sum, service) => {
+                const serviceMinutes = Math.round((Number(service.durationHours) || 0) * 60);
+                return sum + (serviceMinutes > 0 ? serviceMinutes : 0);
+            }, 0);
+        }
+
+        function getAppointmentDurationMinutes(app) {
+            if (!app) return 120;
+
+            const explicitDuration = Number(app.durationMinutes);
+            if (Number.isFinite(explicitDuration) && explicitDuration > 0) {
+                return Math.round(explicitDuration);
+            }
+
+            if (Array.isArray(app.serviceIds) && app.serviceIds.length > 0) {
+                const durationFromIds = app.serviceIds.reduce((sum, serviceId) => {
+                    const match = SERVICES_DATA.find(s => s.id === serviceId);
+                    const serviceMinutes = Math.round((Number(match?.durationHours) || 0) * 60);
+                    return sum + (serviceMinutes > 0 ? serviceMinutes : 0);
+                }, 0);
+                if (durationFromIds > 0) return durationFromIds;
+            }
+
+            const summary = app.serviceSummary || app.service || '';
+            const durationFromSummary = getServiceDurationFromSummary(summary);
+            return durationFromSummary > 0 ? durationFromSummary : 120;
+        }
+
+        function formatMinutesToTimeString(totalMinutes) {
+            const normalizedMinutes = ((Math.round(totalMinutes) % (24 * 60)) + (24 * 60)) % (24 * 60);
+            const hours24 = Math.floor(normalizedMinutes / 60);
+            const minutes = normalizedMinutes % 60;
+            const period = hours24 >= 12 ? 'PM' : 'AM';
+            const hours12 = hours24 % 12 || 12;
+            return `${String(hours12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`;
+        }
+
         function matchesDate(app, selectedDateObj, dateIso) {
             if (!app) return false;
             if (app.appointmentDateIso && app.appointmentDateIso === dateIso) return true;
@@ -6415,29 +6884,10 @@
                 const startTimeStr = app.time || app.appointmentTime;
                 const startMin = parseTimeToMinutes(startTimeStr);
                 if (startMin !== null) {
-                    let dur = app.durationMinutes || getServiceDurationFromSummary(app.service) || 120;
+                    const dur = getAppointmentDurationMinutes(app);
                     occupiedIntervals.push({ start: startMin, end: startMin + dur, source: app });
                 }
             });
-
-            if (window.bookedSlots) {
-                const slotsForDate = window.bookedSlots[dateIso] || window.bookedSlots[selectedDateObj.toDateString()] || [];
-                slotsForDate.forEach(timeStr => {
-                    const timeStrMin = parseTimeToMinutes(timeStr);
-                    const isCanceledSlot = combinedApps.some(a => {
-                        if (a.status !== 'cancelada') return false;
-                        if (!matchesDate(a, selectedDateObj, dateIso)) return false;
-                        const appMin = parseTimeToMinutes(a.time);
-                        return a.time === timeStr || (appMin !== null && timeStrMin !== null && appMin === timeStrMin);
-                    });
-
-                    if (!isCanceledSlot && timeStrMin !== null) {
-                        if (!occupiedIntervals.some(i => i.start === timeStrMin)) {
-                            occupiedIntervals.push({ start: timeStrMin, end: timeStrMin + 120 });
-                        }
-                    }
-                });
-            }
 
             const slots = ALL_TIME_SLOTS.map(timeStr => {
                 const slotStartMin = parseTimeToMinutes(timeStr);
@@ -6459,7 +6909,7 @@
                 }
 
                 for (const interval of occupiedIntervals) {
-                    const overlap = Math.max(slotStartMin, interval.start) < Math.min(slotEndMin, interval.end);
+                    const overlap = slotStartMin < interval.end && slotEndMin > interval.start;
                     if (overlap) {
                         const reason = (slotStartMin === interval.start) ? 'booked' : 'no-space';
                         return { time: timeStr, available: false, reason: reason };
@@ -6579,8 +7029,8 @@
             }
 
             const dateIso = toIsoDateString(selectedDateObj);
-            const totalHours = getSelectedServicesList().reduce((sum, s) => sum + s.durationHours, 0) || 2;
-            const durationMinutes = totalHours * 60;
+            const selectedList = getSelectedServicesList();
+            const durationMinutes = getSelectedServicesDurationMinutes(selectedList) || 120;
 
             const clientAvail = computeClientAvailability(dateIso, durationMinutes);
 
