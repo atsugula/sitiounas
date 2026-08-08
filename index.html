@@ -3246,7 +3246,12 @@
     <script type="module">
         import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import * as bookingSlots from "./assets/js/booking-slots.js";
+
+        // La aritmética de locks vive en un módulo aparte para poder probarla
+        // con `node --test`. Aquí solo se publica para el script clásico.
+        window.bookingSlotUtils = bookingSlots;
 
         const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
 
@@ -3272,7 +3277,7 @@
             // como global y lanzaba ReferenceError, lo que rompía el registro
             // de clientas. Todo lo que use el script clásico debe exponerse
             // explícitamente, porque son ámbitos distintos.
-            window.firestoreUtils = { doc, setDoc, addDoc, getDoc, collection, query, where, getDocs, deleteDoc, serverTimestamp };
+            window.firestoreUtils = { doc, setDoc, addDoc, getDoc, collection, query, where, getDocs, deleteDoc, serverTimestamp, runTransaction, onSnapshot };
 
             window.currentFirebaseUser = null;
             window.currentAdminProfile = null;
@@ -3306,6 +3311,7 @@
                 window.currentFirebaseUser = window.authInstance ? window.authInstance.currentUser : null;
                 if (typeof window.unsubscribeAdminUsers === 'function') window.unsubscribeAdminUsers();
                 if (typeof window.unsubscribeIncomeGoal === 'function') window.unsubscribeIncomeGoal();
+                if (typeof window.unsubscribeAppointments === 'function') window.unsubscribeAppointments();
             }
 
             onAuthStateChanged(auth, async (user) => {
@@ -3320,10 +3326,12 @@
                 if (!isAdmin) {
                     clearAdminSessionMemory();
                     // Cuenta de clienta: su sesión se rehidrata desde
-                    // Firestore, no desde lo que haya en localStorage.
+                    // Firestore, no desde lo que haya en localStorage, y solo
+                    // se le suscriben sus propias citas.
                     if (typeof window.hydrateClientSession === 'function') {
                         window.hydrateClientSession(user);
                     }
+                    window.subscribeClientAppointments(user.uid);
                     const adminPanel = document.getElementById('admin-panel-modal');
                     if (adminPanel && !adminPanel.classList.contains('hidden')) {
                         adminPanel.classList.add('hidden');
@@ -3339,6 +3347,7 @@
                 window.currentAdminProfile = { uid: user.uid, email: user.email || '', role: 'admin' };
                 if (typeof window.subscribeAdminUsers === 'function') window.subscribeAdminUsers();
                 if (typeof window.subscribeIncomeGoal === 'function') window.subscribeIncomeGoal();
+                window.subscribeAdminAppointments();
 
                 if (window.location.hash === '#admin' || window.location.pathname.endsWith('/admin')) {
                     const authModal = document.getElementById('admin-auth-modal');
@@ -3364,25 +3373,41 @@
                 console.warn("Firebase Auth fallback activado.");
             });
 
-            const appointmentsRef = collection(db, 'appointments');
-            onSnapshot(appointmentsRef, (snapshot) => {
-                const cloudBookedSlots = {};
-                const allAppointments = [];
+            // ── Disponibilidad pública: bookingSlots ────────────────────
+            // Antes, TODA visitante abría un listener sobre `appointments`, es
+            // decir recibía nombre, teléfono y notas de todas las clientas
+            // solo por cargar la web. Ahora la disponibilidad se sirve desde
+            // los locks, que no contienen ningún dato personal.
+            window.lockedSlotsByDate = {};
 
+            onSnapshot(collection(db, 'bookingSlots'), (snapshot) => {
+                const slots = [];
                 snapshot.forEach((docSnap) => {
-                    const data = docSnap.data();
-                    if (data && data.dateKey && data.time && data.status !== 'cancelada') {
-                        if (!cloudBookedSlots[data.dateKey]) {
-                            cloudBookedSlots[data.dateKey] = [];
-                        }
-                        if (!cloudBookedSlots[data.dateKey].includes(data.time)) {
-                            cloudBookedSlots[data.dateKey].push(data.time);
-                        }
-                    }
-                    allAppointments.push({ ...data, id: docSnap.id });
+                    const data = docSnap.data() || {};
+                    slots.push({ id: docSnap.id, dateIso: data.dateIso, startTime: data.startTime });
                 });
 
-                window.bookedSlots = cloudBookedSlots;
+                window.lockedSlotsByDate = bookingSlots.groupLockedSlotsByDate(slots);
+
+                if (typeof window.renderCalendar === 'function') window.renderCalendar();
+                if (typeof window.renderTimeSlots === 'function') window.renderTimeSlots();
+            }, (error) => {
+                console.warn("No pudimos sincronizar la disponibilidad:", error);
+            });
+
+            // ── Citas ───────────────────────────────────────────────────
+            // `appointments` contiene PII, así que ya no hay un listener
+            // global. El admin ve la colección entera; la clienta solo sus
+            // propias citas, mediante una query filtrada por `clientUid` que
+            // es la única que las Rules permiten.
+            let unsubscribeAppointments = null;
+
+            function applyAppointmentsSnapshot(snapshot) {
+                const allAppointments = [];
+                snapshot.forEach((docSnap) => {
+                    allAppointments.push({ ...docSnap.data(), id: docSnap.id });
+                });
+
                 window.allAppointmentsList = allAppointments;
 
                 if (typeof window.renderCalendar === 'function') window.renderCalendar();
@@ -3391,9 +3416,34 @@
                 if (typeof window.renderAdminCharts === 'function' && window.isAdminAuthenticated) window.renderAdminCharts();
                 if (typeof window.renderAdminBookingsTable === 'function' && window.isAdminAuthenticated) window.renderAdminBookingsTable();
                 if (typeof window.renderAdminBirthdays === 'function' && window.isAdminAuthenticated) window.renderAdminBirthdays();
-            }, (error) => {
-                console.warn("Firestore sync fallback a LocalStorage.");
-            });
+            }
+
+            window.unsubscribeAppointments = function () {
+                if (unsubscribeAppointments) {
+                    unsubscribeAppointments();
+                    unsubscribeAppointments = null;
+                }
+                window.allAppointmentsList = [];
+            };
+
+            window.subscribeAdminAppointments = function () {
+                window.unsubscribeAppointments();
+                unsubscribeAppointments = onSnapshot(
+                    collection(db, 'appointments'),
+                    applyAppointmentsSnapshot,
+                    (error) => console.warn("Firestore appointments sync error:", error)
+                );
+            };
+
+            window.subscribeClientAppointments = function (uid) {
+                window.unsubscribeAppointments();
+                if (!uid) return;
+                unsubscribeAppointments = onSnapshot(
+                    query(collection(db, 'appointments'), where('clientUid', '==', uid)),
+                    applyAppointmentsSnapshot,
+                    (error) => console.warn("Firestore client appointments sync error:", error)
+                );
+            };
 
             // La coleccion `users` contiene PII y solo es listable por admin.
             // Por eso la suscripcion se abre unicamente cuando hay una sesion
@@ -3946,11 +3996,26 @@
 
             const dateObj = new Date(dateStr + 'T00:00:00');
             const formattedDateKey = dateObj.toDateString();
+            const durationMinutes = getServiceDurationFromSummary(serviceStr);
+            const startMinutes = parseTimeToMinutes(timeSlot);
 
+            if (startMinutes === null) {
+                showToast("La hora de la cita presencial no es válida.", "error");
+                return;
+            }
+
+            // La cita presencial se alinea con el mismo modelo que la cita web
+            // (Fase 1) para que ocupe turnos reales y no genere un hueco
+            // fantasma en la agenda pública.
             const newWalkIn = {
                 id: 'walkin_' + Date.now(),
                 dateKey: formattedDateKey,
                 appointmentDateIso: dateStr,
+                serviceIds: [],
+                serviceSummary: serviceStr,
+                durationMinutes: durationMinutes,
+                startTime: timeSlot,
+                endTime: formatMinutesToTimeString(startMinutes + durationMinutes),
                 time: timeSlot,
                 name: name,
                 phone: phone,
@@ -3959,40 +4024,30 @@
                 birthday: birthday,
                 status: 'confirmada',
                 isWalkIn: true,
+                isRefunded: false,
                 paidStatus: paidStatus,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                salonId: 'nails-con-val',
+                clientUid: window.authInstance?.currentUser?.uid || null
             };
 
-            const localApps = JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
+            // Una cita presencial compite por los mismos turnos que una
+            // reserva web, así que pasa por la misma transacción de locks.
+            try {
+                await commitBookingTransaction(newWalkIn);
+            } catch (error) {
+                if (error && error.message === 'SLOT_TAKEN') {
+                    showToast('Ese horario ya está ocupado. Revisa la agenda y elige otro turno.', 'error');
+                } else {
+                    console.error('Error registrando la cita presencial:', error);
+                    showToast('No pudimos registrar la cita presencial. Intenta de nuevo.', 'error');
+                }
+                return;
+            }
+
+            const localApps = readCache('ncv_appointments', []);
             localApps.push(newWalkIn);
-            localStorage.setItem('ncv_appointments', JSON.stringify(localApps));
-
-            if (window.allAppointmentsList) {
-                window.allAppointmentsList.push(newWalkIn);
-            }
-
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    await setDoc(doc(window.dbInstance, 'appointments', newWalkIn.id), newWalkIn);
-                } catch (e) { }
-            }
-
-            let users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-            let userIdx = users.findIndex(u => u.phone === phone);
-            if (userIdx >= 0) {
-                users[userIdx].bookedCount = (users[userIdx].bookedCount || 0) + 1;
-            } else {
-                users.push({
-                    id: 'user_' + phone.replace(/[^0-9]/g, ''),
-                    name: name,
-                    phone: phone,
-                    email: `${phone}@cliente.com`,
-                    bookedCount: 1,
-                    createdAt: new Date().toISOString()
-                });
-            }
-            localStorage.setItem('ncv_users', JSON.stringify(users));
+            cacheLocally('ncv_appointments', localApps);
 
             closeAdminWalkInModal();
             if (typeof window.renderCalendar === 'function') window.renderCalendar();
@@ -4131,10 +4186,54 @@
             return new Date(year, month, day, hours, minutes, 0);
         }
 
-        window.requestClientCancellation = function (appId, dateKeyStr, timeStr) {
-            let apps = JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
-            const idx = apps.findIndex(a => a.id === appId || (a.dateKey === dateKeyStr && a.time === timeStr));
+        /**
+         * Cancela una cita y libera sus locks en la MISMA transacción.
+         *
+         * Si sólo se marcara la cita como cancelada, los turnos quedarían
+         * ocupados para siempre y el salón perdería agenda real. Y si se
+         * borraran los locks aparte, un fallo a medias dejaría turnos libres
+         * con una cita activa encima.
+         *
+         * La eligibilidad de devolución la calcula el navegador solo como
+         * información para la clienta: `refundEligible` e `isRefunded` son
+         * decisiones económicas y las escribe el admin (Fase 6).
+         */
+        async function releaseAppointmentAndSlots(appointmentId, { cancellationNoticeHours }) {
+            if (!isFirestoreReady() || !window.firestoreUtils.runTransaction) {
+                throw new Error('FIRESTORE_UNAVAILABLE');
+            }
 
+            const { doc, runTransaction } = window.firestoreUtils;
+            const utils = window.bookingSlotUtils;
+
+            await runTransaction(window.dbInstance, async (transaction) => {
+                const appointmentRef = doc(window.dbInstance, 'appointments', appointmentId);
+                const appointmentSnap = await transaction.get(appointmentRef);
+
+                if (!appointmentSnap.exists()) {
+                    throw new Error('APPOINTMENT_NOT_FOUND');
+                }
+
+                const appointment = appointmentSnap.data() || {};
+                const slotIds = utils.computeSlotIdsForAppointment({
+                    dateIso: appointment.appointmentDateIso,
+                    startTime: appointment.startTime || appointment.time,
+                    durationMinutes: appointment.durationMinutes,
+                    salonId: appointment.salonId
+                });
+
+                transaction.update(appointmentRef, {
+                    status: 'cancelada',
+                    cancellationNoticeHours: cancellationNoticeHours
+                });
+
+                slotIds.forEach((slotId) => {
+                    transaction.delete(doc(window.dbInstance, 'bookingSlots', slotId));
+                });
+            });
+        }
+
+        window.requestClientCancellation = async function (appId, dateKeyStr, timeStr) {
             let hoursDifference = 48;
             let appDate = new Date();
             const now = new Date();
@@ -4150,24 +4249,27 @@
                 ? "✓ Solicitud realizada con ≥24h de anticipación. Aplica para devolución de abono ($10.000 COP)."
                 : "⚠️ Solicitud fuera de tiempo o posterior a la cita. NO aplica devolución de abono (abono retenido por el estudio).";
 
+            if (!appId) {
+                showToast('No pudimos identificar la cita. Contacta al estudio, por favor.', 'error');
+                return;
+            }
+
+            try {
+                await releaseAppointmentAndSlots(appId, {
+                    cancellationNoticeHours: Math.round(hoursDifference)
+                });
+            } catch (error) {
+                console.error('Error cancelando la cita:', error);
+                showToast('No pudimos cancelar la cita. Intenta de nuevo o escríbenos por WhatsApp.', 'error');
+                return;
+            }
+
+            const apps = readCache('ncv_appointments', []);
+            const idx = apps.findIndex(a => a.id === appId || (a.dateKey === dateKeyStr && a.time === timeStr));
             if (idx >= 0) {
                 apps[idx].status = 'cancelada';
                 apps[idx].cancellationNoticeHours = Math.round(hoursDifference);
-                apps[idx].refundEligible = isRefundEligible;
-                apps[idx].isRefunded = isRefundEligible;
-                localStorage.setItem('ncv_appointments', JSON.stringify(apps));
-            }
-
-            if (window.dbInstance && window.firestoreUtils && appId) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    setDoc(doc(window.dbInstance, 'appointments', appId), {
-                        status: 'cancelada',
-                        refundEligible: isRefundEligible,
-                        isRefunded: isRefundEligible,
-                        cancellationNoticeHours: Math.round(hoursDifference)
-                    }, { merge: true });
-                } catch (e) { }
+                cacheLocally('ncv_appointments', apps);
             }
 
             let alerts = JSON.parse(localStorage.getItem('ncv_cancellation_alerts') || '[]');
@@ -5616,62 +5718,76 @@
             });
         };
 
-        window.changeBookingStatus = function (appId, newStatus) {
-            let apps = window.allAppointmentsList || JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
+        window.changeBookingStatus = async function (appId, newStatus) {
+            const apps = window.allAppointmentsList || readCache('ncv_appointments', []);
             const idx = apps.findIndex(a => a.id === appId);
+            if (idx < 0) return;
 
-            if (idx >= 0) {
-                apps[idx].status = newStatus;
+            const app = apps[idx];
 
+            try {
                 if (newStatus === 'cancelada') {
-                    const dateStr = apps[idx].dateKey || apps[idx].appointmentDateIso;
-                    const timeStr = apps[idx].time;
-                    const appDate = parseAppointmentDateTime(dateStr, timeStr);
+                    // Cancelar desde el panel también libera los turnos: si no,
+                    // el hueco quedaría muerto en la agenda pública.
+                    const dateStr = app.dateKey || app.appointmentDateIso;
+                    const appDate = parseAppointmentDateTime(dateStr, app.time);
                     const now = new Date();
-                    const diffMs = appDate.getTime() - now.getTime();
-                    const hoursNotice = diffMs / (1000 * 60 * 60);
-
+                    const hoursNotice = (appDate.getTime() - now.getTime()) / (1000 * 60 * 60);
                     const isEligible = hoursNotice >= 12 && appDate > now;
-                    apps[idx].refundEligible = isEligible;
-                    apps[idx].isRefunded = isEligible;
-                    apps[idx].cancellationNoticeHours = Math.round(hoursNotice);
 
-                    let alerts = JSON.parse(localStorage.getItem('ncv_cancellation_alerts') || '[]');
+                    await releaseAppointmentAndSlots(appId, {
+                        cancellationNoticeHours: Math.round(hoursNotice)
+                    });
+
+                    // La decisión económica es del admin y va en una escritura
+                    // aparte, no dentro de la transacción de liberación.
+                    await saveAppointmentAdminFields(appId, {
+                        refundEligible: isEligible,
+                        isRefunded: isEligible
+                    });
+
+                    app.status = 'cancelada';
+                    app.refundEligible = isEligible;
+                    app.isRefunded = isEligible;
+                    app.cancellationNoticeHours = Math.round(hoursNotice);
+
+                    const alerts = readCache('ncv_cancellation_alerts', []);
                     alerts.unshift({
                         id: 'alert_' + Date.now(),
                         appId: appId,
                         dateKey: dateStr,
-                        time: timeStr,
+                        time: app.time,
                         refundEligible: isEligible,
                         hoursNotice: Math.round(hoursNotice),
                         createdAt: new Date().toISOString()
                     });
-                    localStorage.setItem('ncv_cancellation_alerts', JSON.stringify(alerts));
+                    cacheLocally('ncv_cancellation_alerts', alerts);
+                } else {
+                    await saveAppointmentAdminFields(appId, { status: newStatus });
+                    app.status = newStatus;
                 }
-
-                localStorage.setItem('ncv_appointments', JSON.stringify(apps));
-
-                if (window.dbInstance && window.firestoreUtils && appId) {
-                    try {
-                        const { doc, setDoc } = window.firestoreUtils;
-                        let updateData = { status: newStatus };
-                        if (newStatus === 'cancelada') {
-                            updateData.refundEligible = apps[idx].refundEligible;
-                            updateData.isRefunded = apps[idx].isRefunded;
-                            updateData.cancellationNoticeHours = apps[idx].cancellationNoticeHours;
-                        }
-                        setDoc(doc(window.dbInstance, 'appointments', appId), updateData, { merge: true });
-                    } catch (e) { console.error("Error updating appointment status:", e); }
-                }
-
-                showToast(`Cita de ${escapeHtml(apps[idx].name || 'Cliente')} actualizada a: ${newStatus.toUpperCase()}`);
-                renderAdminBookingsTable();
-                renderAdminCharts();
-                renderAdminCancellationAlerts();
-                if (typeof window.renderCalendar === 'function') window.renderCalendar();
-                if (typeof window.renderTimeSlots === 'function') window.renderTimeSlots();
+            } catch (error) {
+                console.error("Error actualizando el estado de la cita:", error);
+                showToast('No pudimos actualizar la cita en la nube. Intenta de nuevo.', 'error');
+                return;
             }
+
+            cacheLocally('ncv_appointments', apps);
+
+            showToast(`Cita de ${escapeHtml(app.name || 'Cliente')} actualizada a: ${newStatus.toUpperCase()}`);
+            renderAdminBookingsTable();
+            renderAdminCharts();
+            renderAdminCancellationAlerts();
+            if (typeof window.renderCalendar === 'function') window.renderCalendar();
+            if (typeof window.renderTimeSlots === 'function') window.renderTimeSlots();
         };
+
+        /** Escritura admin sobre una cita. Espera confirmación de Firestore. */
+        async function saveAppointmentAdminFields(appointmentId, fields) {
+            if (!isFirestoreReady()) throw new Error('FIRESTORE_UNAVAILABLE');
+            const { doc, setDoc } = window.firestoreUtils;
+            await setDoc(doc(window.dbInstance, 'appointments', appointmentId), fields, { merge: true });
+        }
 
         window.toggleAbonoRefund = function (appId) {
             let apps = window.allAppointmentsList || JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
@@ -6493,8 +6609,15 @@
             const listEl = document.getElementById('user-appointments-list');
             if (!listEl) return;
 
-            const localApps = JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
-            const userApps = currentUserSession ? localApps.filter(app => app.phone === currentUserSession.phone) : [];
+            // La fuente es la suscripción filtrada por `clientUid`, que es la
+            // única que las Rules permiten a una clienta. Filtrar por teléfono
+            // dejaba ver la cita de cualquiera que compartiera número, y no
+            // demuestra propiedad de nada.
+            const uid = window.authInstance?.currentUser?.uid || null;
+            const cloudApps = window.allAppointmentsList || [];
+            const userApps = uid
+                ? cloudApps.filter(app => app.clientUid === uid && app.status !== 'cancelada')
+                : [];
 
             if (userApps.length === 0) {
                 listEl.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">No tienes citas registradas activas.</p>`;
@@ -6862,7 +6985,13 @@
                 birthday: birthday,
                 status: 'confirmada',
                 createdAt: new Date().toISOString(),
-                salonId: 'nails-con-val'
+                salonId: 'nails-con-val',
+                // Propietario real de la cita. Sin este campo no existe
+                // ownership demostrable y las Rules no pueden distinguir la
+                // cita propia de la ajena.
+                clientUid: window.authInstance?.currentUser?.uid || null,
+                isWalkIn: false,
+                isRefunded: false
             };
 
             // Mostrar el modal de preview
@@ -6886,22 +7015,115 @@
             }
         };
 
+        /**
+         * Reserva atómica.
+         *
+         * Antes esto era un `setDoc` suelto: dos clientas podían confirmar el
+         * mismo horario con un segundo de diferencia y las dos quedaban
+         * "confirmadas". La comprobación de disponibilidad vivía solo en el
+         * navegador, que es exactamente donde no puede vivir.
+         *
+         * Ahora todo ocurre dentro de una sola transacción de Firestore:
+         *   1. se calculan los turnos de 30 minutos que ocupa la cita;
+         *   2. se leen TODOS los locks (las lecturas van antes que las escrituras);
+         *   3. si alguno existe, se aborta entera: no hay reserva parcial;
+         *   4. se crean todos los locks;
+         *   5. se crea la cita.
+         *
+         * Si dos navegadores compiten, Firestore reintenta la transacción
+         * perdedora, que en el segundo intento ya encuentra el lock ocupado y
+         * falla limpiamente.
+         */
+        async function commitBookingTransaction(appointmentData) {
+            if (!isFirestoreReady() || !window.firestoreUtils.runTransaction) {
+                throw new Error('FIRESTORE_UNAVAILABLE');
+            }
+
+            const { doc, runTransaction, serverTimestamp } = window.firestoreUtils;
+            const utils = window.bookingSlotUtils;
+
+            const dateIso = appointmentData.appointmentDateIso;
+            const slotStartTimes = utils.computeSlotStartTimes(
+                appointmentData.startTime,
+                appointmentData.durationMinutes
+            );
+
+            if (!dateIso || slotStartTimes.length === 0) {
+                throw new Error('INVALID_SLOT_RANGE');
+            }
+
+            const slotIds = slotStartTimes.map(
+                (startTime) => utils.buildSlotId(dateIso, startTime, appointmentData.salonId)
+            );
+
+            await runTransaction(window.dbInstance, async (transaction) => {
+                const slotRefs = slotIds.map((slotId) => doc(window.dbInstance, 'bookingSlots', slotId));
+
+                // Firestore exige que todas las lecturas precedan a cualquier
+                // escritura dentro de la transacción.
+                const snapshots = [];
+                for (const slotRef of slotRefs) {
+                    snapshots.push(await transaction.get(slotRef));
+                }
+
+                const { canBook, takenSlotIds } = utils.resolveBookingConflict(
+                    snapshots.map((snap, i) => ({ slotId: slotIds[i], exists: snap.exists() }))
+                );
+
+                if (!canBook) {
+                    const conflict = new Error('SLOT_TAKEN');
+                    conflict.takenSlotIds = takenSlotIds;
+                    throw conflict;
+                }
+
+                slotRefs.forEach((slotRef, i) => {
+                    transaction.set(slotRef, {
+                        salonId: appointmentData.salonId,
+                        dateKey: appointmentData.dateKey,
+                        dateIso: dateIso,
+                        startTime: slotStartTimes[i],
+                        appointmentId: appointmentData.id,
+                        createdAt: serverTimestamp()
+                    });
+                });
+
+                transaction.set(doc(window.dbInstance, 'appointments', appointmentData.id), appointmentData);
+            });
+
+            return slotIds;
+        }
+
         window.confirmWhatsAppBooking = async function () {
-            // Guardar datos
-            const localApps = JSON.parse(localStorage.getItem('ncv_appointments') || '[]');
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            if (!authUser) {
+                showToast('Necesitamos una sesión activa para apartar tu turno. Recarga la página e intenta de nuevo.', 'error');
+                return;
+            }
+
+            pendingAppointmentData.clientUid = authUser.uid;
+
+            // La cita se persiste ANTES de tocar la cache local o de abrir
+            // WhatsApp. Si el turno ya no está libre, la clienta se entera
+            // aquí y no después de haber transferido el abono.
+            try {
+                await commitBookingTransaction(pendingAppointmentData);
+            } catch (error) {
+                if (error && error.message === 'SLOT_TAKEN') {
+                    showToast('Ese horario acaba de ser reservado por otra clienta. Elige otro turno, por favor.', 'error');
+                    if (typeof renderTimeSlots === 'function') renderTimeSlots();
+                } else if (error && error.message === 'FIRESTORE_UNAVAILABLE') {
+                    showToast('No pudimos conectar con la agenda. Revisa tu internet e intenta de nuevo.', 'error');
+                } else {
+                    console.error('Error confirmando la reserva:', error);
+                    showToast('No pudimos apartar tu turno. Intenta de nuevo.', 'error');
+                }
+                return;
+            }
+
+            // Cache local de solo lectura, ya con la reserva confirmada.
+            const localApps = readCache('ncv_appointments', []);
             localApps.push(pendingAppointmentData);
-            localStorage.setItem('ncv_appointments', JSON.stringify(localApps));
-
-            if (window.allAppointmentsList) {
-                window.allAppointmentsList.push(pendingAppointmentData);
-            }
-
-            if (window.dbInstance && window.firestoreUtils) {
-                try {
-                    const { doc, setDoc } = window.firestoreUtils;
-                    await setDoc(doc(window.dbInstance, 'appointments', pendingAppointmentData.id), pendingAppointmentData);
-                } catch (e) { }
-            }
+            cacheLocally('ncv_appointments', localApps);
 
             // Aquí antes ocurrían dos cosas incorrectas:
             //   1. se escribía `users/{telefono}`, una ruta legacy paralela a
@@ -7098,6 +7320,11 @@
                 return matchesDate(app, selectedDateObj, dateIso);
             });
 
+            const lockedForDate = (window.lockedSlotsByDate && window.lockedSlotsByDate[dateIso]) || new Set();
+            const to24h = (timeStr) => window.bookingSlotUtils.formatMinutesTo24h(
+                window.bookingSlotUtils.parseTimeToMinutes(timeStr)
+            );
+
             const occupiedIntervals = [];
 
             activeApps.forEach(app => {
@@ -7119,6 +7346,15 @@
 
                 if (isToday && slotStartMin <= currentMinutes) {
                     return { time: timeStr, available: false, reason: 'past' };
+                }
+
+                // Los locks de `bookingSlots` son la fuente pública de
+                // ocupación: no contienen datos personales y son lo único que
+                // ve una visitante sin sesión. Se comprueban ADEMÁS de los
+                // intervalos de las citas visibles, porque durante la
+                // migración conviven citas antiguas que aún no tienen lock.
+                if (lockedForDate.size > 0 && !window.bookingSlotUtils.isRangeFree(lockedForDate, timeStr, durationMinutes)) {
+                    return { time: timeStr, available: false, reason: lockedForDate.has(to24h(timeStr)) ? 'booked' : 'no-space' };
                 }
 
                 // Excepción del Turno Noche (07:00 PM / 1140 min): permite hasta 3 horas continuas (hasta 22:00 PM / 1320 min)

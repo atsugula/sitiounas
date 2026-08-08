@@ -245,10 +245,11 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && incoming().salonId == salonId()
         && isShortString(incoming().dateKey, 40)
+        && isShortString(incoming().dateIso, 10)
         && isShortString(incoming().startTime, 5)
         && isShortString(incoming().appointmentId, 64)
         && incoming().keys().hasOnly([
-             'salonId', 'dateKey', 'startTime', 'appointmentId', 'createdAt'
+             'salonId', 'dateKey', 'dateIso', 'startTime', 'appointmentId', 'createdAt'
            ]);
 
       // Un lock nunca se modifica en sitio: se crea o se libera.

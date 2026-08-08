@@ -33,6 +33,8 @@ import {
 
 const SALON = 'nails-con-val';
 const PROJECT_ID = 'nailsconval-rules-test';
+// Mismo formato determinista que produce assets/js/booking-slots.js
+const SLOT_ID = `${SALON}_2026-09-01_14:00`;
 
 let testEnv;
 
@@ -119,9 +121,10 @@ beforeEach(async () => {
         await setDoc(doc(db, 'appointments', 'app_a'), appointment('cliente-a', { id: 'app_a' }));
         await setDoc(doc(db, 'settings', 'custom_services'), { services: [] });
         await setDoc(doc(db, 'settings', 'income_goal'), { amount: 5000000 });
-        await setDoc(doc(db, 'bookingSlots', 'Tue Sep 01 2026_14:00'), {
+        await setDoc(doc(db, 'bookingSlots', SLOT_ID), {
             salonId: SALON,
             dateKey: 'Tue Sep 01 2026',
+            dateIso: '2026-09-01',
             startTime: '14:00',
             appointmentId: 'app_a',
             createdAt: '2026-08-01T00:00:00.000Z'
@@ -306,27 +309,38 @@ describe('appointments', () => {
 
 describe('bookingSlots', () => {
     test('la disponibilidad es de lectura publica', async () => {
-        await assertSucceeds(getDoc(doc(unauthed(), 'bookingSlots', 'Tue Sep 01 2026_14:00')));
+        await assertSucceeds(getDoc(doc(unauthed(), 'bookingSlots', SLOT_ID)));
     });
 
     test('un lock no puede modificarse en sitio', async () => {
         const db = registered('cliente-a');
-        await assertFails(updateDoc(doc(db, 'bookingSlots', 'Tue Sep 01 2026_14:00'), {
+        await assertFails(updateDoc(doc(db, 'bookingSlots', SLOT_ID), {
             appointmentId: 'app_otro'
         }));
     });
 
     test('el dueño de la cita libera su lock y un tercero no', async () => {
-        await assertFails(deleteDoc(doc(registered('cliente-b'), 'bookingSlots', 'Tue Sep 01 2026_14:00')));
-        await assertSucceeds(deleteDoc(doc(registered('cliente-a'), 'bookingSlots', 'Tue Sep 01 2026_14:00')));
+        await assertFails(deleteDoc(doc(registered('cliente-b'), 'bookingSlots', SLOT_ID)));
+        await assertSucceeds(deleteDoc(doc(registered('cliente-a'), 'bookingSlots', SLOT_ID)));
     });
 
     test('un lock nuevo requiere sesion y forma valida', async () => {
-        await assertFails(setDoc(doc(unauthed(), 'bookingSlots', 'x_10:00'), {
-            salonId: SALON, dateKey: 'x', startTime: '10:00', appointmentId: 'app_z'
-        }));
-        await assertSucceeds(setDoc(doc(registered('cliente-a'), 'bookingSlots', 'x_10:00'), {
-            salonId: SALON, dateKey: 'x', startTime: '10:00', appointmentId: 'app_z'
+        const nuevo = {
+            salonId: SALON, dateKey: 'Wed Sep 02 2026', dateIso: '2026-09-02',
+            startTime: '10:00', appointmentId: 'app_z'
+        };
+        const id = `${SALON}_2026-09-02_10:00`;
+
+        await assertFails(setDoc(doc(unauthed(), 'bookingSlots', id), nuevo));
+        // Campo extra no declarado en el modelo
+        await assertFails(setDoc(doc(registered('cliente-a'), 'bookingSlots', id), { ...nuevo, clientPhone: '3001234567' }));
+        await assertSucceeds(setDoc(doc(registered('cliente-a'), 'bookingSlots', id), nuevo));
+    });
+
+    test('un lock no puede llevar PII', async () => {
+        await assertFails(setDoc(doc(registered('cliente-a'), 'bookingSlots', `${SALON}_2026-09-03_10:00`), {
+            salonId: SALON, dateKey: 'Thu Sep 03 2026', dateIso: '2026-09-03',
+            startTime: '10:00', appointmentId: 'app_z', name: 'Cliente Demo'
         }));
     });
 });
