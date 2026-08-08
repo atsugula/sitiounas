@@ -7,11 +7,12 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "check": "node tools/check-inline-scripts.mjs index.html",
-    "test": "node --test tests/booking-slots.test.mjs tests/loyalty.test.mjs tests/sanitize.test.mjs tests/time.test.mjs tests/availability.test.mjs tests/migrate-plan.test.mjs",
+    "test": "node --test tests/booking-slots.test.mjs tests/loyalty.test.mjs tests/sanitize.test.mjs tests/time.test.mjs tests/availability.test.mjs tests/migrate-plan.test.mjs tests/appointment-payload.test.mjs",
     "test:sanitize": "node --test tests/sanitize.test.mjs",
     "test:booking": "node --test tests/booking-slots.test.mjs",
     "test:loyalty": "node --test tests/loyalty.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.mjs\"",
+    "test:rules:api": "node tools/check-rules-remote.mjs",
     "emulators": "firebase emulators:start --only firestore",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:hosting": "firebase deploy --only hosting",

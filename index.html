@@ -4050,15 +4050,26 @@
             // La cita presencial se alinea con el mismo modelo que la cita web
             // (Fase 1) para que ocupe turnos reales y no genere un hueco
             // fantasma en la agenda pública.
+            // El selector de la cita presencial guarda el servicio como texto,
+            // no como id. Las Rules exigen al menos un id, así que se intenta
+            // resolver contra el catálogo y, si no hay coincidencia, se marca
+            // como presencial en vez de dejar la lista vacía.
+            const matchedServiceIds = SERVICES_DATA
+                .filter((s) => s?.name && serviceStr.toLowerCase().includes(String(s.name).toLowerCase()))
+                .map((s) => s.id);
+            const walkInServiceIds = matchedServiceIds.length > 0 ? matchedServiceIds : ['presencial'];
+
             const newWalkIn = {
                 id: 'walkin_' + Date.now(),
                 dateKey: formattedDateKey,
                 appointmentDateIso: dateStr,
-                serviceIds: [],
+                serviceIds: walkInServiceIds,
                 serviceSummary: serviceStr,
                 durationMinutes: durationMinutes,
-                startTime: timeSlot,
-                endTime: formatMinutesToTimeString(startMinutes + durationMinutes),
+                // Mismo formato canónico que la reserva web: la hora que se
+                // guarda es de 24 horas y `time` conserva la visible.
+                startTime: window.timeUtils.formatMinutesTo24h(startMinutes),
+                endTime: window.timeUtils.formatMinutesTo24h(startMinutes + durationMinutes),
                 time: timeSlot,
                 name: name,
                 phone: phone,
@@ -5271,6 +5282,12 @@
             }
 
             const promoCountBadge = document.getElementById('admin-promo-count-badge');
+            // Faltaba esta línea: `promoTableBody` se usaba más abajo sin
+            // declararse nunca, así que renderAdminCharts() lanzaba
+            // ReferenceError. Como la cancelación de una clienta llama a esta
+            // función, el fallo abortaba el refresco posterior y la clienta no
+            // llegaba a ver la confirmación, aunque la cita sí se cancelaba.
+            const promoTableBody = document.getElementById('admin-promo-accounting-table-body');
 
             if (promoCountBadge) promoCountBadge.textContent = `${promoAppointmentsList.length} ${promoAppointmentsList.length === 1 ? 'Cita Registrada' : 'Citas Registradas'}`;
 
@@ -6446,6 +6463,24 @@
             return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value || '');
         }
 
+        /**
+         * Mensaje para un fallo leyendo `users/{uid}` después de un login
+         * correcto. Distinguirlos importa: "sin permisos" apunta a las Rules,
+         * "unavailable" a la red o a un bloqueador de anuncios del navegador,
+         * y confundirlos hace perder horas buscando en el sitio equivocado.
+         */
+        function getProfileReadErrorMessage(error) {
+            switch (error?.code) {
+                case 'permission-denied':
+                    return 'Tu cuenta no tiene permiso para leer su propio perfil. Avísanos: es un problema de configuración, no tuyo.';
+                case 'unavailable':
+                case 'deadline-exceeded':
+                    return 'No pudimos conectar con la base de datos. Revisa tu conexión y desactiva bloqueadores de anuncios para este sitio.';
+                default:
+                    return 'No pudimos cargar tu perfil de cliente. Intenta de nuevo en un momento.';
+            }
+        }
+
         function getClientLoginAuthErrorMessage(error) {
             switch (error?.code) {
                 case 'auth/invalid-email':
@@ -6589,8 +6624,16 @@
                 const { doc, setDoc } = window.firestoreUtils;
                 await setDoc(doc(window.dbInstance, 'users', authUser.uid), cloudUserProfile);
             } catch (cloudErr) {
-                console.error("Error guardando perfil de cliente en Firestore:", cloudErr);
-                showToast("Tu cuenta se creó en Firebase Auth, pero no pudimos guardar tu perfil de cliente.", "error");
+                // El alta queda a medias: la cuenta de Auth existe pero sin
+                // perfil no se puede entrar. No se anuncia como registro
+                // correcto, y se dice qué falló para no dejarlo en el aire.
+                console.warn('[AUTH] alta a medias: cuenta creada, perfil rechazado:', cloudErr?.code || 'sin-codigo');
+                showToast(
+                    cloudErr?.code === 'permission-denied'
+                        ? "Tu cuenta se creó, pero el perfil fue rechazado por la base de datos. Escríbenos antes de volver a intentarlo."
+                        : "Tu cuenta se creó, pero no pudimos guardar tu perfil. Escríbenos para completarlo.",
+                    "error"
+                );
                 return;
             }
 
@@ -6670,7 +6713,13 @@
                 const docSnap = await getDoc(docRef);
 
                 if (!docSnap.exists()) {
-                    showToast("Tu perfil está incompleto. Contacta a soporte.", "error");
+                    // Auth válido pero sin documento de perfil. No se
+                    // reconstruye: name, phone y birthdate solo existirían en
+                    // el navegador, y el navegador no es autoridad sobre el
+                    // perfil. Se dice exactamente qué pasa en vez de cerrar
+                    // sesión sin explicación.
+                    console.warn('[AUTH] login sin perfil Firestore para el uid autenticado');
+                    showToast("Tu perfil de Ramos Nails no está configurado correctamente. Escríbenos para completarlo.", "error");
                     if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                         await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                     }
@@ -6679,8 +6728,11 @@
 
                 firestoreProfile = docSnap.data() || {};
             } catch (cloudErr) {
-                console.error("Firebase profile load error:", cloudErr);
-                showToast("No pudimos cargar tu perfil de cliente.", "error");
+                // Sin el código de error, "no pudimos cargar tu perfil" tapaba
+                // por igual un problema de permisos, uno de red y un bloqueo
+                // del navegador. Se distinguen, sin imprimir datos personales.
+                console.warn('[AUTH] fallo leyendo el perfil:', cloudErr?.code || 'sin-codigo');
+                showToast(getProfileReadErrorMessage(cloudErr), "error");
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                 }
@@ -6708,10 +6760,12 @@
             });
 
             if (!safeSessionProfile.name || !safeSessionProfile.phone || !safeSessionProfile.email) {
+                const faltan = ['name', 'phone', 'email'].filter((f) => !safeSessionProfile[f]);
+                console.warn('[AUTH] perfil existente pero incompleto. Campos vacíos:', faltan.join(', '));
                 if (window.firebaseAuthUtils && window.firebaseAuthUtils.signOut) {
                     await window.firebaseAuthUtils.signOut(window.authInstance).catch(() => { });
                 }
-                showToast("Tu perfil está incompleto. Contacta a soporte.", "error");
+                showToast(`Tu perfil de Ramos Nails está incompleto (falta ${faltan.join(', ')}). Escríbenos para completarlo.`, "error");
                 return;
             }
 
@@ -6914,6 +6968,7 @@
                 const snap = await getDoc(doc(window.dbInstance, 'users', authUser.uid));
 
                 if (!snap.exists()) {
+                    console.warn('[AUTH] sesión válida sin perfil en users/{uid}; se limpia la sesión local');
                     clearClientSession();
                     return;
                 }
@@ -7332,8 +7387,13 @@
             pendingWhatsAppUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(pendingWhatsAppMessage)}`;
 
             const appointmentDateIso = selectedDateObj ? toIsoDateString(selectedDateObj) : '';
-            const startTime = time;
-            const endTime = formatMinutesToTimeString(parseTimeToMinutes(startTime) + durationMinutes);
+            const startMinutes = parseTimeToMinutes(time);
+            if (startMinutes === null) {
+                showToast('No pudimos entender la hora seleccionada. Elige el turno de nuevo.', 'error');
+                return;
+            }
+            const startTime = window.timeUtils.formatMinutesTo24h(startMinutes);
+            const endTime = window.timeUtils.formatMinutesTo24h(startMinutes + durationMinutes);
             const finalNotes = (window.appliedPromoCode ? `[PROMO: ${window.appliedPromoCode}] ` : '') + notes;
             pendingAppointmentData = {
                 id: 'app_' + Date.now(),
@@ -7344,7 +7404,9 @@
                 durationMinutes: durationMinutes,
                 startTime: startTime,
                 endTime: endTime,
-                time: startTime,
+                // `time` conserva el formato visible de 12 horas: es el que
+                // lee toda la UI y el que ve la clienta.
+                time: time,
                 name: name,
                 phone: phone,
                 service: servicesSummaryText,
@@ -7577,6 +7639,23 @@
 
         function formatMinutesToTimeString(totalMinutes) {
             return window.timeUtils.formatMinutesToTimeString(totalMinutes);
+        }
+
+        /**
+         * Hora canónica que se guarda en Firestore: "HH:MM" en 24 horas.
+         *
+         * No es cosmético. `ALL_TIME_SLOTS` usa el formato visible de 12 horas
+         * ("02:00 PM", 8 caracteres) y las Rules exigen `startTime` y `endTime`
+         * de 5 caracteres como máximo, porque ese es el formato con el que
+         * `booking-slots.js` construye los ids de los locks. Guardar el texto
+         * de 12 horas hacía que Firestore rechazara la cita entera con
+         * PERMISSION_DENIED.
+         *
+         * El texto visible sigue viajando en `time`, que es lo que lee la UI.
+         */
+        function toCanonicalTime(timeStr) {
+            const minutes = window.timeUtils.parseTimeToMinutes(timeStr);
+            return minutes === null ? null : window.timeUtils.formatMinutesTo24h(minutes);
         }
 
         function toIsoDateString(date) {

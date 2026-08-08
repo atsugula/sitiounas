@@ -4,8 +4,8 @@
     {
       "name": "ramos-nails",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["tools/serve.mjs", "5173"],
-      "port": 5173
+      "runtimeArgs": ["tools/serve.mjs", "5183"],
+      "port": 5183
     }
   ]
 }

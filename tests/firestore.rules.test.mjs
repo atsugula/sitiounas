@@ -241,6 +241,75 @@ describe('appointments', () => {
         ));
     });
 
+    // Regresion del bug de produccion (PERMISSION_DENIED al reservar).
+    //
+    // Estos tests pasaban en verde con '14:00' mientras el frontend guardaba
+    // '02:00 PM', que es el texto visible de ALL_TIME_SLOTS y mide 8
+    // caracteres. isShortString(startTime, 5) lo rechazaba y con el se caia la
+    // transaccion entera, asi que ninguna clienta podia reservar.
+    test('una cita con la hora en formato visible de 12h es rechazada', async () => {
+        const db = registered('cliente-a');
+        await assertFails(setDoc(
+            doc(db, 'appointments', 'app_12h'),
+            appointment('cliente-a', { id: 'app_12h', startTime: '02:00 PM', endTime: '04:00 PM' })
+        ));
+    });
+
+    test('el endTime tambien tiene que venir en formato canonico', async () => {
+        const db = registered('cliente-a');
+        await assertFails(setDoc(
+            doc(db, 'appointments', 'app_end12h'),
+            appointment('cliente-a', { id: 'app_end12h', endTime: '04:00 PM' })
+        ));
+    });
+
+    // La cita presencial del admin guardaba serviceIds: [], que la Rule
+    // rechaza por size() >= 1. El walk-in estaba igual de roto que la reserva.
+    test('una cita sin ningun serviceId es rechazada', async () => {
+        const db = registered('cliente-a');
+        await assertFails(setDoc(
+            doc(db, 'appointments', 'app_sin_servicios'),
+            appointment('cliente-a', { id: 'app_sin_servicios', serviceIds: [] })
+        ));
+    });
+
+    test('el admin tampoco puede crear un walk-in sin serviceIds', async () => {
+        const db = registered('admin-1');
+        await assertFails(setDoc(
+            doc(db, 'appointments', 'walkin_roto'),
+            appointment('admin-1', { id: 'walkin_roto', serviceIds: [], isWalkIn: true })
+        ));
+    });
+
+    test('el walk-in del admin con serviceIds y hora canonica si entra', async () => {
+        const db = registered('admin-1');
+        await assertSucceeds(setDoc(
+            doc(db, 'appointments', 'walkin_ok'),
+            appointment('admin-1', {
+                id: 'walkin_ok',
+                serviceIds: ['presencial'],
+                isWalkIn: true,
+                paidStatus: 'pagado'
+            })
+        ));
+    });
+
+    test('una cita con clientUid nulo es rechazada', async () => {
+        const db = registered('cliente-a');
+        await assertFails(setDoc(
+            doc(db, 'appointments', 'app_sin_dueno'),
+            appointment(null, { id: 'app_sin_dueno' })
+        ));
+    });
+
+    test('la sesion anonima del sitio publico puede reservar su propia cita', async () => {
+        const db = anonymous('anon-clienta');
+        await assertSucceeds(setDoc(
+            doc(db, 'appointments', 'app_anon'),
+            appointment('anon-clienta', { id: 'app_anon' })
+        ));
+    });
+
     // 8
     test('el cliente no puede tocar campos administrativos de su cita', async () => {
         const db = registered('cliente-a');
@@ -335,6 +404,16 @@ describe('bookingSlots', () => {
         // Campo extra no declarado en el modelo
         await assertFails(setDoc(doc(registered('cliente-a'), 'bookingSlots', id), { ...nuevo, clientPhone: '3001234567' }));
         await assertSucceeds(setDoc(doc(registered('cliente-a'), 'bookingSlots', id), nuevo));
+    });
+
+    // El lock siempre nacio en formato canonico de 24h, y por eso los locks
+    // solos nunca fallaron: lo que rompia la transaccion era la cita. Se fija
+    // igualmente para que el formato no se relaje por el otro lado.
+    test('un lock con la hora en formato visible de 12h es rechazado', async () => {
+        await assertFails(setDoc(doc(registered('cliente-a'), 'bookingSlots', `${SALON}_2026-09-04_10:00`), {
+            salonId: SALON, dateKey: 'Fri Sep 04 2026', dateIso: '2026-09-04',
+            startTime: '10:00 AM', appointmentId: 'app_z'
+        }));
     });
 
     test('un lock no puede llevar PII', async () => {
