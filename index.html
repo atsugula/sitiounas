@@ -3248,10 +3248,13 @@
         import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import * as bookingSlots from "./assets/js/booking-slots.js";
+        import * as loyalty from "./assets/js/loyalty.js";
 
-        // La aritmética de locks vive en un módulo aparte para poder probarla
-        // con `node --test`. Aquí solo se publica para el script clásico.
+        // La aritmética de locks y las reglas de fidelidad viven en módulos
+        // aparte para poder probarlas con `node --test`. Aquí solo se publican
+        // para el script clásico.
         window.bookingSlotUtils = bookingSlots;
+        window.loyaltyUtils = loyalty;
 
         const savedFbConfig = JSON.parse(localStorage.getItem('ncv_firebase_config') || 'null');
 
@@ -4315,16 +4318,22 @@
             const widgetClients = new Map();
             const tableClients = new Map();
 
-            const processClient = (phone, name, dateString) => {
+            const processClient = (phone, name, dateString, uid = null, stamps = null) => {
                 if (!dateString) return;
                 const parts = dateString.split('-');
                 if (parts.length >= 3) {
                     const bMonth = parts[1];
+                    const previous = widgetClients.get(phone) || tableClients.get(phone);
                     const clientData = {
                         name: name || 'Clienta',
                         phone: phone,
                         birthday: dateString,
-                        day: parts[2]
+                        day: parts[2],
+                        // El uid solo existe si la clienta tiene perfil real en
+                        // Firestore. Sin él no se puede ajustar fidelidad,
+                        // porque la fidelidad se lleva por `users/{uid}`.
+                        uid: uid || previous?.uid || null,
+                        stamps: stamps !== null ? stamps : (previous?.stamps ?? null)
                     };
                     if (bMonth === widgetMonthStr) {
                         widgetClients.set(phone, clientData);
@@ -4335,8 +4344,8 @@
                 }
             };
 
-            allUsers.forEach(u => processClient(u.phone, u.name, u.birthdate));
-            allApps.forEach(app => processClient(app.phone, app.name, app.birthday));
+            allUsers.forEach(u => processClient(u.phone, u.name, u.birthdate, u.uid, Number(u.bookedCount) || 0));
+            allApps.forEach(app => processClient(app.phone, app.name, app.birthday, app.clientUid));
 
             const widgetClientsArr = Array.from(widgetClients.values()).sort((a, b) => parseInt(a.day) - parseInt(b.day));
             const tableClientsArr = Array.from(tableClients.values()).sort((a, b) => parseInt(a.day) - parseInt(b.day));
@@ -4388,7 +4397,11 @@
                             <td class="p-3 text-gray-400 font-mono text-xs">
                                 ${escapeHtml(client.phone)}
                             </td>
-                            <td class="p-3 text-right">
+                            <td class="p-3 text-right whitespace-nowrap">
+                                ${client.uid ? `
+                                <button onclick="promptAdminLoyaltyAdjustment('${escapeHtml(client.uid)}', '${escapeHtml(client.name)}')" class="bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-white border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 mr-1" title="Ajustar estampas de fidelidad (queda registrado)">
+                                    <i class="fa-solid fa-stamp"></i> ${client.stamps !== null ? escapeHtml(String(client.stamps)) : ''} Estampas
+                                </button>` : ''}
                                 <button onclick="sendBirthdayWhatsApp('${firstName}', '${escapeHtml(client.phone)}')" class="bg-fuchsia-500/10 text-fuchsia-400 hover:bg-fuchsia-500 hover:text-white border border-fuchsia-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
                                     <i class="fa-brands fa-whatsapp"></i> Enviar Bono
                                 </button>
@@ -5762,6 +5775,17 @@
                 } else {
                     await saveAppointmentAdminFields(appId, { status: newStatus });
                     app.status = newStatus;
+
+                    // La estampa se deriva de una cita completada, nunca de
+                    // que la clienta haya pulsado "reservar".
+                    if (newStatus === 'completada') {
+                        try {
+                            await grantLoyaltyForCompletedAppointment({ ...app, status: 'completada' });
+                        } catch (loyaltyError) {
+                            console.error('Error registrando la fidelidad:', loyaltyError);
+                            showToast('La cita quedó completada, pero no pudimos registrar la estampa de fidelidad.', 'error');
+                        }
+                    }
                 }
             } catch (error) {
                 console.error("Error actualizando el estado de la cita:", error);
@@ -5785,6 +5809,169 @@
             const { doc, setDoc } = window.firestoreUtils;
             await setDoc(doc(window.dbInstance, 'appointments', appointmentId), fields, { merge: true });
         }
+
+        // ── Fidelidad (Fase 7) ─────────────────────────────────────────
+        // La autoridad de las estampas es `loyalty_transactions`, un historial
+        // auditable que solo el admin puede escribir. `users/{uid}.bookedCount`
+        // pasa a ser una cache derivada: sirve para pintar la tarjeta sin leer
+        // todo el historial, pero no decide nada.
+
+        /**
+         * Registra las transacciones de fidelidad de una cita completada.
+         *
+         * Todo dentro de una transacción y con ids deterministas
+         * (`earn_{appointmentId}`), de forma que marcar la misma cita como
+         * completada varias veces no regale estampas de más.
+         */
+        async function grantLoyaltyForCompletedAppointment(appointment) {
+            if (!isFirestoreReady() || !window.firestoreUtils.runTransaction) return null;
+            if (!appointment || !appointment.clientUid) return null;
+
+            const { doc, runTransaction } = window.firestoreUtils;
+            const utils = window.loyaltyUtils;
+            const createdBy = window.authInstance?.currentUser?.uid || null;
+
+            const candidateIds = [
+                utils.buildLoyaltyTxId(utils.LOYALTY_TYPES.EARN, appointment.id),
+                utils.buildLoyaltyTxId(utils.LOYALTY_TYPES.REDEEM, appointment.id)
+            ];
+
+            return runTransaction(window.dbInstance, async (transaction) => {
+                const userRef = doc(window.dbInstance, 'users', appointment.clientUid);
+
+                // Lecturas primero: las que ya existen y el perfil.
+                const existingTxIds = [];
+                for (const txId of candidateIds) {
+                    const snap = await transaction.get(doc(window.dbInstance, 'loyalty_transactions', txId));
+                    if (snap.exists()) existingTxIds.push(txId);
+                }
+                const userSnap = await transaction.get(userRef);
+
+                const pending = utils.resolveLoyaltyGrant({
+                    appointment: { ...appointment, status: 'completada' },
+                    existingTxIds,
+                    createdBy
+                });
+
+                if (pending.length === 0) return { granted: 0 };
+
+                pending.forEach((tx) => {
+                    transaction.set(doc(window.dbInstance, 'loyalty_transactions', tx.id), {
+                        userId: tx.userId,
+                        appointmentId: tx.appointmentId,
+                        salonId: tx.salonId,
+                        type: tx.type,
+                        stampsDelta: tx.stampsDelta,
+                        reason: tx.reason,
+                        createdBy: tx.createdBy,
+                        createdAt: new Date().toISOString()
+                    });
+                });
+
+                // La cache solo se actualiza si el perfil existe: nunca se crea
+                // un usuario desde el flujo de fidelidad.
+                if (userSnap.exists()) {
+                    transaction.update(userRef, {
+                        bookedCount: utils.applyDeltasToCachedCount(userSnap.data().bookedCount, pending)
+                    });
+                }
+
+                return { granted: pending.length };
+            });
+        }
+
+        /**
+         * Ajuste manual de estampas. Solo admin, siempre con motivo, y siempre
+         * deja rastro en el historial.
+         */
+        window.adminAdjustClientLoyalty = async function (userId, stampsDelta, reason) {
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            if (!authUser || !(await checkFirebaseAdminRole(authUser))) {
+                showToast("No tienes una sesión administrativa válida.", "error");
+                return false;
+            }
+
+            if (!isFirestoreReady() || !window.firestoreUtils.runTransaction) {
+                showToast("No pudimos conectar con la nube para ajustar la fidelidad.", "error");
+                return false;
+            }
+
+            let adjustment;
+            try {
+                adjustment = window.loyaltyUtils.buildManualAdjustment({
+                    userId,
+                    stampsDelta: Number(stampsDelta),
+                    reason,
+                    createdBy: authUser.uid,
+                    timestampSuffix: String(Date.now())
+                });
+            } catch (error) {
+                showToast(getLoyaltyAdjustErrorMessage(error), "error");
+                return false;
+            }
+
+            const { doc, runTransaction } = window.firestoreUtils;
+
+            try {
+                await runTransaction(window.dbInstance, async (transaction) => {
+                    const userRef = doc(window.dbInstance, 'users', userId);
+                    const userSnap = await transaction.get(userRef);
+                    if (!userSnap.exists()) throw new Error('LOYALTY_USER_NOT_FOUND');
+
+                    transaction.set(doc(window.dbInstance, 'loyalty_transactions', adjustment.id), {
+                        userId: adjustment.userId,
+                        appointmentId: adjustment.appointmentId,
+                        salonId: adjustment.salonId,
+                        type: adjustment.type,
+                        stampsDelta: adjustment.stampsDelta,
+                        reason: adjustment.reason,
+                        createdBy: adjustment.createdBy,
+                        createdAt: new Date().toISOString()
+                    });
+
+                    transaction.update(userRef, {
+                        bookedCount: window.loyaltyUtils.applyDeltasToCachedCount(
+                            userSnap.data().bookedCount,
+                            [adjustment]
+                        )
+                    });
+                });
+            } catch (error) {
+                console.error('Error ajustando la fidelidad:', error);
+                showToast(
+                    error.message === 'LOYALTY_USER_NOT_FOUND'
+                        ? 'No encontramos el perfil de esa clienta.'
+                        : 'No pudimos registrar el ajuste de fidelidad.',
+                    'error'
+                );
+                return false;
+            }
+
+            showToast(`Fidelidad ajustada en ${adjustment.stampsDelta > 0 ? '+' : ''}${adjustment.stampsDelta} estampa(s).`);
+            return true;
+        };
+
+        function getLoyaltyAdjustErrorMessage(error) {
+            switch (error?.message) {
+                case 'LOYALTY_MISSING_USER': return 'No se indicó a qué clienta ajustar.';
+                case 'LOYALTY_INVALID_DELTA': return 'El ajuste debe ser un número entero distinto de cero.';
+                case 'LOYALTY_DELTA_TOO_LARGE': return 'El ajuste no puede superar 10 estampas de una vez.';
+                case 'LOYALTY_MISSING_REASON': return 'Escribe el motivo del ajuste: queda en el historial.';
+                case 'LOYALTY_MISSING_AUTHOR': return 'No pudimos identificar quién hace el ajuste.';
+                default: return 'No pudimos preparar el ajuste de fidelidad.';
+            }
+        }
+
+        /** Diálogo del panel para ajustar estampas de una clienta. */
+        window.promptAdminLoyaltyAdjustment = async function (userId, clientName) {
+            const rawDelta = prompt(`Ajuste de estampas para ${clientName || 'la clienta'}.\nUsa un número entero (por ejemplo 1 o -1):`);
+            if (rawDelta === null) return;
+
+            const reason = prompt('Motivo del ajuste (queda registrado en el historial):');
+            if (reason === null) return;
+
+            await window.adminAdjustClientLoyalty(userId, parseInt(rawDelta, 10), reason);
+        };
 
         // Marcar un abono como devuelto es una decisión de dinero, así que va
         // a la nube primero: si Firestore rechaza (por ejemplo, porque la
@@ -6648,9 +6835,13 @@
         };
 
         function updateLoyaltyCardUI() {
+            // `bookedCount` es la cache derivada del historial de
+            // `loyalty_transactions`, que es la autoridad. Se lee de la sesión
+            // rehidratada desde Firestore, nunca de lo que diga el navegador.
+            const threshold = window.loyaltyUtils ? window.loyaltyUtils.REWARD_THRESHOLD : 10;
             const count = currentUserSession ? (currentUserSession.bookedCount || 0) : 0;
             const countText = document.getElementById('loyalty-count-text');
-            if (countText) countText.textContent = `${Math.min(count, 10)} / 10 citas`;
+            if (countText) countText.textContent = `${Math.min(count, threshold)} / ${threshold} citas`;
 
             const themeKey = (window.adminDiscountSettings && window.adminDiscountSettings.ticketTheme) || 'purple';
             const themeConfig = (window.TICKET_THEME_CLASSES && window.TICKET_THEME_CLASSES[themeKey]) || window.TICKET_THEME_CLASSES.purple;
@@ -6685,6 +6876,11 @@
         window.redeemFreeCoupon = function () {
             activeDiscountPercent = adminDiscountSettings.loyaltyPercent || 66;
             selectedServiceIds.add('mani_semi');
+
+            // El canje no lo escribe la clienta: se marca la cita y el
+            // descuento se descuenta del saldo cuando el admin la completa.
+            // Así el premio queda trazable y no se puede canjear dos veces.
+            window.pendingLoyaltyRedeem = true;
 
             const notesInput = document.getElementById('form-notes');
             if (notesInput) {
@@ -6996,7 +7192,8 @@
                 // cita propia de la ajena.
                 clientUid: window.authInstance?.currentUser?.uid || null,
                 isWalkIn: false,
-                isRefunded: false
+                isRefunded: false,
+                loyaltyRedeemed: Boolean(window.pendingLoyaltyRedeem)
             };
 
             // Mostrar el modal de preview
@@ -7129,6 +7326,10 @@
             const localApps = readCache('ncv_appointments', []);
             localApps.push(pendingAppointmentData);
             cacheLocally('ncv_appointments', localApps);
+
+            // El cupón queda consumido por esta cita: si la clienta agenda otra
+            // antes de que el admin complete esta, no debe volver a marcarse.
+            window.pendingLoyaltyRedeem = false;
 
             // Aquí antes ocurrían dos cosas incorrectas:
             //   1. se escribía `users/{telefono}`, una ruta legacy paralela a
