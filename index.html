@@ -1685,10 +1685,10 @@
                 <form id="auth-login-form" onsubmit="handleUserLogin(event)" class="space-y-4 pb-6">
                     <div>
                         <label
-                            class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">WhatsApp
-                            o Correo</label>
-                        <input type="text" id="login-identifier" required
-                            placeholder="Ej: 3192395653 o correo@gmail.com" class="ncv-input">
+                            class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Correo
+                            Electrónico</label>
+                        <input type="email" id="login-identifier" required
+                            placeholder="Ej: correo@gmail.com" class="ncv-input">
                     </div>
                     <div>
                         <label
@@ -1699,6 +1699,11 @@
                         <i class="fa-solid fa-right-to-bracket"></i>
                         <span>Entrar a mi Cuenta</span>
                     </button>
+                    <p class="text-center text-xs text-gray-500 mt-1">
+                        <button type="button" onclick="handleClientPasswordReset()"
+                            class="text-brand-700 font-bold hover:underline cursor-pointer">¿Olvidaste tu
+                            contraseña?</button>
+                    </p>
                     <p class="text-center text-xs text-gray-400 mt-1">
                         ¿No tienes cuenta?
                         <button type="button" onclick="switchAuthTab('register')"
@@ -1816,7 +1821,49 @@
                 <p class="text-xs text-gray-400 italic text-center py-4">No tienes citas registradas activas.</p>
             </div>
 
-            <div class="flex gap-3 pt-2 border-t border-gray-100">
+            <!-- Edición de perfil: solo campos de contacto. El rol, la
+                 fidelidad y el salón no son editables por la clienta. -->
+            <details id="user-profile-edit" class="mb-4 border border-gray-100 rounded-2xl overflow-hidden">
+                <summary
+                    class="cursor-pointer bg-gray-50 hover:bg-gray-100 px-4 py-3 text-xs font-bold text-gray-700 flex items-center gap-2 transition-colors">
+                    <i class="fa-solid fa-pen-to-square text-brand-600"></i>
+                    <span>Editar mis datos</span>
+                </summary>
+                <form onsubmit="handleClientProfileUpdate(event)" class="p-4 space-y-3">
+                    <div>
+                        <label
+                            class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Nombre
+                            Completo</label>
+                        <input type="text" id="profile-edit-name" required maxlength="120" class="ncv-input">
+                    </div>
+                    <div>
+                        <label
+                            class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Número
+                            de WhatsApp</label>
+                        <input type="tel" id="profile-edit-phone" required maxlength="30" class="ncv-input">
+                    </div>
+                    <div>
+                        <label
+                            class="block text-[11px] font-bold text-purple-800 uppercase tracking-wider mb-1.5">Fecha de
+                            Cumpleaños</label>
+                        <input type="date" id="profile-edit-birthdate" class="ncv-input">
+                    </div>
+                    <button type="submit" class="ncv-btn-primary">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Guardar cambios</span>
+                    </button>
+                    <p class="text-[11px] text-gray-400 text-center">
+                        Tu correo es tu identificador de acceso y no se puede cambiar desde aquí.
+                    </p>
+                </form>
+            </details>
+
+            <div class="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                <button onclick="handleClientPasswordReset()"
+                    class="w-full bg-brand-50 hover:bg-brand-100 text-brand-800 font-bold py-2.5 rounded-xl border border-brand-200 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-key"></i>
+                    <span>Cambiar mi contraseña</span>
+                </button>
                 <button onclick="handleUserLogout()"
                     class="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 rounded-xl border border-rose-200 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer">
                     <i class="fa-solid fa-right-from-bracket"></i>
@@ -3245,7 +3292,7 @@
 
     <script type="module">
         import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, addDoc, getDoc, collection, onSnapshot, getDocs, query, where, deleteDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import * as bookingSlots from "./assets/js/booking-slots.js";
         import * as loyalty from "./assets/js/loyalty.js";
@@ -3275,7 +3322,7 @@
 
             window.dbInstance = db;
             window.authInstance = auth;
-            window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously };
+            window.firebaseAuthUtils = { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously, sendPasswordResetEmail };
             // `serverTimestamp` faltaba aquí: el script clásico lo invocaba
             // como global y lanzaba ReferenceError, lo que rompía el registro
             // de clientas. Todo lo que use el script clásico debe exponerse
@@ -6408,24 +6455,22 @@
             }
         }
 
+        /**
+         * Resuelve el correo con el que iniciar sesión.
+         *
+         * El puente `teléfono -> email` se retira. Antes buscaba el correo en
+         * `ncv_users`, una copia local de la base de clientas: solo funcionaba
+         * en el navegador donde ya se había entrado, y sobre datos que
+         * cualquiera podía editar desde la consola.
+         *
+         * La alternativa "buscar el teléfono en Firestore" es peor: obligaría a
+         * exponer una consulta pública sobre `users` por teléfono, es decir un
+         * directorio de las clientas del salón. Firebase Auth se identifica por
+         * correo, así que se pide el correo.
+         */
         function resolveClientLoginEmail(identifier) {
-            if (isValidEmailAddress(identifier)) {
-                return identifier.trim().toLowerCase();
-            }
-
-            const normalizedPhone = (identifier || '').replace(/\D/g, '');
-            if (!normalizedPhone) return null;
-
-            try {
-                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const match = users.find(user => {
-                    const storedPhone = (user.phone || '').replace(/\D/g, '');
-                    return storedPhone === normalizedPhone && isValidEmailAddress(user.email);
-                });
-                return match ? match.email.trim().toLowerCase() : null;
-            } catch (error) {
-                return null;
-            }
+            const normalized = String(identifier || '').trim().toLowerCase();
+            return isValidEmailAddress(normalized) ? normalized : null;
         }
 
         function buildSafeClientSession(profileData = {}, fallbackProfile = {}) {
@@ -6450,34 +6495,20 @@
             return safeProfile;
         }
 
-        function upsertSafeLegacyClientRecord(profile) {
+        /**
+         * Borra los restos del directorio local de clientas.
+         *
+         * `ncv_users` guardaba nombre, teléfono, correo y cumpleaños de cada
+         * clienta que hubiera entrado en ese navegador. Ya no se escribe, pero
+         * lo que quedó de antes sigue ahí, así que se limpia al arrancar.
+         */
+        function purgeLegacyClientDirectory() {
             try {
-                const users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const normalizedProfile = buildSafeClientSession(profile);
-                const normalizedPhone = (normalizedProfile.phone || '').replace(/\D/g, '');
-                const normalizedEmail = (normalizedProfile.email || '').toLowerCase();
-                const existingIdx = users.findIndex(user => {
-                    const userPhone = (user.phone || '').replace(/\D/g, '');
-                    const userEmail = (user.email || '').toLowerCase();
-                    const userUid = (user.uid || user.id || '').toString();
-                    return userUid === normalizedProfile.uid || userPhone === normalizedPhone || userEmail === normalizedEmail;
-                });
-
-                const legacyCreatedAt = existingIdx >= 0 ? users[existingIdx].createdAt : null;
-                const safeLegacyRecord = {
-                    ...normalizedProfile,
-                    createdAt: legacyCreatedAt || new Date().toISOString()
-                };
-
-                if (existingIdx >= 0) {
-                    users[existingIdx] = safeLegacyRecord;
-                } else {
-                    users.push(safeLegacyRecord);
+                if (localStorage.getItem('ncv_users') !== null) {
+                    localStorage.removeItem('ncv_users');
                 }
-
-                localStorage.setItem('ncv_users', JSON.stringify(users));
             } catch (error) {
-                console.error("Error sanando ncv_users tras login:", error);
+                console.warn("No pudimos limpiar el directorio local heredado:", error);
             }
         }
 
@@ -6553,28 +6584,11 @@
                 return;
             }
 
-            try {
-                let users = JSON.parse(localStorage.getItem('ncv_users') || '[]');
-                const existingIdx = users.findIndex(u => {
-                    const phoneMatch = (u.phone || '').replace(/\D/g, '') === phone.replace(/\D/g, '');
-                    const emailMatch = (u.email || '').toLowerCase() === email.toLowerCase();
-                    return phoneMatch || emailMatch;
-                });
-                const safeLocalUser = {
-                    ...safeUserProfile,
-                    role,
-                    createdAt: new Date().toISOString()
-                };
-                if (existingIdx >= 0) {
-                    users[existingIdx] = safeLocalUser;
-                } else {
-                    users.push(safeLocalUser);
-                }
-                localStorage.setItem('ncv_users', JSON.stringify(users));
-                localStorage.setItem('ncv_current_user', JSON.stringify(safeLocalUser));
-            } catch (e) {
-                console.error("Error guardando localmente:", e);
-            }
+            // Ya no se mantiene `ncv_users`: era un directorio local de la base
+            // de clientas que servía de puente para iniciar sesión por teléfono
+            // y que además guardaba PII en el navegador de cualquiera que
+            // usara ese equipo. La sesión de UI sí se guarda, sin más.
+            persistCurrentClientSession({ ...safeUserProfile, role });
 
             currentUserSession = {
                 ...safeUserProfile,
@@ -6597,7 +6611,7 @@
             const password = document.getElementById('login-password').value.trim();
 
             if (!identifier || !password) {
-                showToast("Ingresa tu teléfono/correo y contraseña.", "error");
+                showToast("Ingresa tu correo y contraseña.", "error");
                 return;
             }
 
@@ -6606,19 +6620,14 @@
                 return;
             }
 
-            const looksLikeEmail = identifier.includes('@');
             const resolvedEmail = resolveClientLoginEmail(identifier);
             if (!resolvedEmail) {
-                if (looksLikeEmail) {
-                    showToast("El correo electrónico no es válido.", "error");
-                    return;
-                }
-
-                if (!isValidEmailAddress(identifier)) {
-                    showToast("Por seguridad, inicia sesión con el correo asociado a tu cuenta.", "error");
-                    return;
-                }
-                showToast("Por seguridad, inicia sesión con el correo asociado a tu cuenta.", "error");
+                showToast(
+                    identifier.includes('@')
+                        ? "El correo electrónico no es válido."
+                        : "Inicia sesión con el correo de tu cuenta. Si no lo recuerdas, usa \"¿Olvidaste tu contraseña?\".",
+                    "error"
+                );
                 return;
             }
 
@@ -6703,7 +6712,6 @@
             // la sesión local se deriva del documento, nunca al revés.
 
             persistCurrentClientSession(safeSessionProfile);
-            upsertSafeLegacyClientRecord(safeSessionProfile);
 
             updateUserNavigationUI();
             if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();
@@ -6724,11 +6732,156 @@
             if (typeof updateLoyaltyCardUI === 'function') updateLoyaltyCardUI();
         }
 
-        window.handleUserLogout = function () {
+        /**
+         * Cierra sesión de verdad.
+         *
+         * Antes solo se borraba la sesión local: la clienta seguía autenticada
+         * en Firebase Auth, con sus suscripciones vivas y su token válido. En
+         * un equipo compartido eso significa que "cerrar sesión" no cerraba
+         * nada. Ahora se cierra en Firebase y se recupera la sesión anónima que
+         * necesita la web pública.
+         */
+        window.handleUserLogout = async function () {
             clearClientSession();
+            if (typeof window.unsubscribeAppointments === 'function') window.unsubscribeAppointments();
             closeUserProfileModal();
+
+            const auth = window.authInstance;
+            const utils = window.firebaseAuthUtils;
+            if (auth && utils && utils.signOut && auth.currentUser && !auth.currentUser.isAnonymous) {
+                await utils.signOut(auth).catch(() => { });
+                if (utils.signInAnonymously) {
+                    await utils.signInAnonymously(auth).catch(() => { });
+                }
+            }
+
             showToast("Has cerrado sesión en tu cuenta.");
         };
+
+        /**
+         * Recuperación de contraseña con el flujo oficial de Firebase Auth.
+         *
+         * No se genera ninguna contraseña a mano ni se guarda ningún token: se
+         * pide a Firebase que envíe su correo de restablecimiento.
+         *
+         * La respuesta es siempre la misma exista o no la cuenta. Decir "ese
+         * correo no está registrado" convertiría el formulario en un
+         * comprobador de qué clientas tiene el salón.
+         */
+        window.handleClientPasswordReset = async function () {
+            const auth = window.authInstance;
+            const utils = window.firebaseAuthUtils;
+
+            if (!auth || !utils || !utils.sendPasswordResetEmail) {
+                showToast("El servicio de recuperación no está disponible ahora mismo.", "error");
+                return;
+            }
+
+            const suggested = currentUserSession?.email
+                || document.getElementById('login-identifier')?.value.trim()
+                || '';
+            const input = prompt('Escribe tu correo electrónico y te enviamos un enlace para restablecer tu contraseña:', suggested);
+            if (input === null) return;
+
+            const email = input.trim().toLowerCase();
+            if (!isValidEmailAddress(email)) {
+                showToast("Escribe un correo electrónico válido.", "error");
+                return;
+            }
+
+            try {
+                await utils.sendPasswordResetEmail(auth, email);
+            } catch (error) {
+                // `auth/user-not-found` se trata como éxito a propósito.
+                if (error?.code && error.code !== 'auth/user-not-found') {
+                    console.warn("Error enviando el correo de recuperación:", error);
+                    if (error.code === 'auth/invalid-email') {
+                        showToast("Escribe un correo electrónico válido.", "error");
+                        return;
+                    }
+                    if (error.code === 'auth/too-many-requests') {
+                        showToast("Demasiados intentos. Espera unos minutos e inténtalo de nuevo.", "error");
+                        return;
+                    }
+                    if (error.code === 'auth/network-request-failed') {
+                        showToast("No pudimos conectar. Revisa tu internet.", "error");
+                        return;
+                    }
+                }
+            }
+
+            showToast("Si ese correo tiene cuenta, te acabamos de enviar el enlace para restablecer tu contraseña.");
+        };
+
+        /**
+         * Actualiza los datos de contacto del perfil.
+         *
+         * Solo nombre, teléfono y cumpleaños. `uid`, `salonId`, `role`,
+         * `bookedCount` y `createdAt` no se envían siquiera: son inmutables
+         * para la clienta y las Rules rechazarían la escritura.
+         *
+         * El correo tampoco: es el identificador de acceso en Firebase Auth y
+         * cambiarlo requiere reautenticación, que es otro flujo.
+         */
+        window.handleClientProfileUpdate = async function (event) {
+            event.preventDefault();
+
+            const authUser = window.authInstance ? window.authInstance.currentUser : null;
+            if (!authUser || authUser.isAnonymous || !currentUserSession) {
+                showToast("Necesitas iniciar sesión para editar tu perfil.", "error");
+                return;
+            }
+
+            const name = document.getElementById('profile-edit-name').value.trim();
+            const phone = document.getElementById('profile-edit-phone').value.trim().replace(/\s+/g, '');
+            const birthdate = document.getElementById('profile-edit-birthdate').value;
+
+            if (!name || name.length > 120) {
+                showToast("Escribe tu nombre completo.", "error");
+                return;
+            }
+
+            if (phone.replace(/\D/g, '').length < 10) {
+                showToast("El número de WhatsApp no parece válido.", "error");
+                return;
+            }
+
+            if (!isFirestoreReady()) {
+                showToast("No pudimos conectar con la nube. Intenta de nuevo.", "error");
+                return;
+            }
+
+            try {
+                const { doc, setDoc } = window.firestoreUtils;
+                await setDoc(
+                    doc(window.dbInstance, 'users', authUser.uid),
+                    { name, phone, birthdate: birthdate || '' },
+                    { merge: true }
+                );
+            } catch (error) {
+                console.error("Error actualizando el perfil:", error);
+                showToast("No pudimos guardar tus datos. Intenta de nuevo.", "error");
+                return;
+            }
+
+            persistCurrentClientSession({ ...currentUserSession, name, phone, birthdate: birthdate || '' });
+            updateUserNavigationUI();
+            fillClientProfileEditForm();
+            document.getElementById('user-profile-name').textContent = currentUserSession.name;
+            document.getElementById('user-profile-phone').textContent = `Teléfono: ${currentUserSession.phone}`;
+
+            showToast("Tus datos quedaron actualizados.");
+        };
+
+        function fillClientProfileEditForm() {
+            if (!currentUserSession) return;
+            const nameInput = document.getElementById('profile-edit-name');
+            const phoneInput = document.getElementById('profile-edit-phone');
+            const birthInput = document.getElementById('profile-edit-birthdate');
+            if (nameInput) nameInput.value = currentUserSession.name || '';
+            if (phoneInput) phoneInput.value = currentUserSession.phone || '';
+            if (birthInput) birthInput.value = currentUserSession.birthdate || '';
+        }
 
         /**
          * Reconstruye la sesión de cliente a partir de `users/{uid}` en
@@ -7037,6 +7190,7 @@
             const initials = currentUserSession.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
             document.getElementById('user-profile-initials').textContent = initials;
 
+            fillClientProfileEditForm();
             updateLoyaltyCardUI();
             refreshUserAppointmentsUI();
             document.getElementById('user-profile-modal').classList.remove('hidden');
@@ -8558,6 +8712,7 @@
                 }
             } catch (e) { }
 
+            purgeLegacyClientDirectory();
             window.applyPaymentKeyToUI();
             renderPublicServicesGrid();
             renderCalendar();
