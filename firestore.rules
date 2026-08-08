@@ -1,0 +1,360 @@
+rules_version = '2';
+
+// NailsConVal — Reglas de seguridad de Cloud Firestore
+// Fase 3: modelo de datos + minimo privilegio.
+//
+// IMPORTANTE SOBRE EL DESPLIEGUE
+// Este archivo describe el estado objetivo del modelo. El frontend actual
+// (index.html) todavia tiene puntos incompatibles documentados en
+// CAMBIOS_FIRESTORE_FASE_3.md, seccion "Incompatibilidades conocidas".
+// No desplegar estas reglas hasta cerrar las Fases 4 y 5.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    function salonId() {
+      return 'nails-con-val';
+    }
+
+    function isSignedIn() {
+      // El sitio publico usa signInAnonymously(), asi que "anonimo" tambien
+      // cuenta como sesion valida para lectura de contenido publico.
+      return request.auth != null;
+    }
+
+    function isRegistered() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function selfProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Un admin es SIEMPRE un usuario registrado (email/password) cuyo
+    // documento users/{uid} tiene role == 'admin'. El cliente nunca puede
+    // escribir su propio 'role', por lo que no puede auto-promoverse.
+    function isAdmin() {
+      return isRegistered()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && selfProfile().role == 'admin';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // En una escritura con merge, request.resource.data ya es el documento
+    // resultante completo, asi que diff() compara el estado final contra el
+    // estado previo.
+    function changedKeys() {
+      return incoming().diff(existing()).affectedKeys();
+    }
+
+    function locked(fields) {
+      return !changedKeys().hasAny(fields);
+    }
+
+    function onlyChanges(fields) {
+      return changedKeys().hasOnly(fields);
+    }
+
+    function isShortString(value, maxLen) {
+      return value is string && value.size() <= maxLen;
+    }
+
+    function belongsToSalon() {
+      return incoming().salonId == salonId();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // users/{uid}
+    // Perfil de cliente. Nunca legible por el publico.
+    // ─────────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+
+      function immutableUserFields() {
+        return ['uid', 'salonId', 'role', 'bookedCount', 'createdAt'];
+      }
+
+      function validProfileShape() {
+        return incoming().uid == userId
+          && isShortString(incoming().name, 120)
+          && isShortString(incoming().phone, 30)
+          && isShortString(incoming().email, 254)
+          && isShortString(incoming().birthdate, 20)
+          && incoming().bookedCount is int
+          && incoming().bookedCount >= 0
+          && incoming().keys().hasOnly([
+               'uid', 'salonId', 'name', 'phone', 'email',
+               'birthdate', 'role', 'bookedCount', 'createdAt'
+             ]);
+      }
+
+      // get: solo el propio perfil o un admin.
+      allow get: if isUser(userId) || isAdmin();
+
+      // list: solo admin. Esto bloquea el onSnapshot() global de usuarios
+      // para visitantes y clientes.
+      allow list: if isAdmin();
+
+      // El cliente crea su propio perfil al registrarse, siempre como
+      // 'client', del salon correcto y con fidelidad en cero.
+      allow create: if isUser(userId)
+        && isRegistered()
+        && validProfileShape()
+        && belongsToSalon()
+        && incoming().role == 'client'
+        && incoming().bookedCount == 0;
+
+      // El cliente solo puede actualizar datos de contacto propios.
+      // uid, salonId, role, bookedCount y createdAt son inmutables para el.
+      allow update: if isUser(userId)
+        && isRegistered()
+        && validProfileShape()
+        && locked(immutableUserFields());
+
+      // El admin puede crear, ajustar y operar perfiles del salon,
+      // pero no puede romper la forma del documento ni el salonId.
+      allow create, update: if isAdmin()
+        && validProfileShape()
+        && belongsToSalon();
+
+      // Borrado de perfiles: solo admin.
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // appointments/{id}
+    // Contiene PII (nombre, telefono, notas). No es de lectura publica.
+    // La disponibilidad publica se sirve desde bookingSlots.
+    // ─────────────────────────────────────────────────────────────
+
+    match /appointments/{appointmentId} {
+
+      function immutableAppointmentFields() {
+        return [
+          'id', 'clientUid', 'salonId', 'createdAt',
+          'appointmentDateIso', 'dateKey', 'serviceIds',
+          'durationMinutes', 'startTime', 'endTime', 'time'
+        ];
+      }
+
+      // El cliente puede cancelar y dejar constancia de con cuanta antelacion
+      // aviso, pero la decision economica (refundEligible / isRefunded) es
+      // exclusivamente del admin.
+      function clientCancellableFields() {
+        return ['status', 'cancellationNoticeHours'];
+      }
+
+      function validAppointmentShape() {
+        return incoming().salonId == salonId()
+          && isShortString(incoming().appointmentDateIso, 10)
+          && isShortString(incoming().dateKey, 40)
+          && isShortString(incoming().startTime, 5)
+          && isShortString(incoming().endTime, 5)
+          && incoming().serviceIds is list
+          && incoming().serviceIds.size() >= 1
+          && incoming().serviceIds.size() <= 12
+          && incoming().durationMinutes is int
+          && incoming().durationMinutes > 0
+          && incoming().durationMinutes <= 600
+          && isShortString(incoming().name, 120)
+          && isShortString(incoming().phone, 30)
+          && isShortString(incoming().serviceSummary, 500)
+          && (!('notes' in incoming()) || isShortString(incoming().notes, 1000));
+      }
+
+      function isOwner() {
+        return isSignedIn()
+          && 'clientUid' in existing()
+          && existing().clientUid == request.auth.uid;
+      }
+
+      allow get: if isAdmin() || isOwner();
+
+      // list: el admin lista todo. El cliente solo puede listar si su query
+      // filtra por clientUid == su uid; una query sin ese filtro es
+      // rechazada por completo por Firestore.
+      allow list: if isAdmin()
+        || (isSignedIn() && existing().clientUid == request.auth.uid);
+
+      // Un cliente autenticado crea su propia cita, siempre marcada con su
+      // uid y sin tocar campos administrativos.
+      allow create: if isSignedIn()
+        && validAppointmentShape()
+        && incoming().clientUid == request.auth.uid
+        && incoming().status in ['confirmada', 'pendiente']
+        && (!('isWalkIn' in incoming()) || incoming().isWalkIn == false)
+        && (!('isRefunded' in incoming()) || incoming().isRefunded == false)
+        && (!('paidStatus' in incoming()) || incoming().paidStatus == 'pendiente');
+
+      // El admin crea citas presenciales (walk-in) sin restriccion de uid.
+      allow create: if isAdmin() && validAppointmentShape();
+
+      // El cliente solo puede cancelar su propia cita. No puede reprogramar,
+      // ni cambiar servicios, ni marcar devoluciones a su favor.
+      allow update: if isOwner()
+        && onlyChanges(clientCancellableFields())
+        && incoming().status == 'cancelada';
+
+      // El admin opera estados, abonos y devoluciones, pero no reescribe la
+      // identidad ni el horario de una cita ya creada: reprogramar implica
+      // liberar y volver a tomar los locks (Fase 5).
+      allow update: if isAdmin()
+        && locked(immutableAppointmentFields());
+
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // bookingSlots/{dateKey_startTime}
+    // Locks deterministas de 30 minutos. Sin PII: es el recurso que
+    // alimenta la disponibilidad publica.
+    // Se escribe dentro de la transaccion de reserva (Fase 5).
+    // ─────────────────────────────────────────────────────────────
+
+    match /bookingSlots/{slotId} {
+
+      function slotAppointment() {
+        return get(/databases/$(database)/documents/appointments/$(existing().appointmentId)).data;
+      }
+
+      function ownsSlotAppointment() {
+        return isSignedIn()
+          && exists(/databases/$(database)/documents/appointments/$(existing().appointmentId))
+          && slotAppointment().clientUid == request.auth.uid;
+      }
+
+      // Lectura publica deliberada: solo dice que un turno esta ocupado.
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && incoming().salonId == salonId()
+        && isShortString(incoming().dateKey, 40)
+        && isShortString(incoming().startTime, 5)
+        && isShortString(incoming().appointmentId, 64)
+        && incoming().keys().hasOnly([
+             'salonId', 'dateKey', 'startTime', 'appointmentId', 'createdAt'
+           ]);
+
+      // Un lock nunca se modifica en sitio: se crea o se libera.
+      allow update: if false;
+
+      allow delete: if isAdmin() || ownsSlotAppointment();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // settings/{docId}
+    // Configuracion del negocio. Lectura publica solo donde la UI la
+    // necesita; escritura exclusiva de admin.
+    // ─────────────────────────────────────────────────────────────
+
+    match /settings/{docId} {
+
+      function publicSettingsDocs() {
+        return [
+          'custom_services',
+          'discount_settings',
+          'schedule_blocks',
+          'gallery_items',
+          'marketing_popup',
+          'payment_key'
+        ];
+      }
+
+      allow read: if docId in publicSettingsDocs();
+      allow read: if isAdmin();
+
+      // Incluye documentos privados como 'income_goal' y cualquier otro
+      // ajuste administrativo futuro.
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // reviews/{id}
+    // ─────────────────────────────────────────────────────────────
+
+    match /reviews/{reviewId} {
+
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && incoming().authorUid == request.auth.uid
+        && incoming().salonId == salonId()
+        && isShortString(incoming().name, 120)
+        && isShortString(incoming().comment, 2000)
+        && incoming().rating is int
+        && incoming().rating >= 1
+        && incoming().rating <= 5;
+
+      // Moderacion: solo admin edita o borra. La edicion por el autor queda
+      // fuera de alcance en esta fase.
+      allow update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // community_posts/{id}
+    // ─────────────────────────────────────────────────────────────
+
+    match /community_posts/{postId} {
+
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && incoming().authorUid == request.auth.uid
+        && incoming().salonId == salonId()
+        && isShortString(incoming().name, 120)
+        && isShortString(incoming().message, 2000)
+        && incoming().likes == 0;
+
+      // Un "me gusta" solo puede sumar exactamente uno y no puede tocar
+      // ningun otro campo.
+      allow update: if isSignedIn()
+        && onlyChanges(['likes'])
+        && incoming().likes == existing().likes + 1;
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin()
+        || (isSignedIn() && existing().authorUid == request.auth.uid);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // loyalty_transactions/{id}
+    // Historial auditable de fidelidad (implementacion en Fase 7).
+    // El cliente jamas escribe estampas.
+    // ─────────────────────────────────────────────────────────────
+
+    match /loyalty_transactions/{txId} {
+
+      allow get: if isAdmin()
+        || (isSignedIn() && existing().userId == request.auth.uid);
+
+      allow list: if isAdmin();
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Denegacion por defecto para cualquier ruta no declarada.
+    // ─────────────────────────────────────────────────────────────
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

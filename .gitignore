@@ -1,0 +1,20 @@
+node_modules/
+package-lock.json
+
+# Firebase CLI / emuladores
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# Secretos y entorno (nunca versionar)
+.env
+.env.*
+*.pem
+*.key
+serviceAccount*.json
+
+# Temporales
+.DS_Store
+Thumbs.db
